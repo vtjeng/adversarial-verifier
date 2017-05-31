@@ -53,6 +53,54 @@ function conv2d{T, U}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
 
 end
 
+function relu(x::Array)
+    return max(0, x)
+end
+
+function maxpool{T<:Number, N}(input_array::AbstractArray{T, N}, strides::NTuple{N, Int})
+    # tried to use pooling function from Knet.relu but it had way too many
+    # incompatibilities
+    return poolmap(maximum, input_array, strides)
+end
+
+"""
+For pooling operations on an array where a given element in the output array
+corresponds to equal-sized blocks in the input array, returns (for a given
+dimension) the index range in the parent array corresponding to a particular
+index `output_index` in the child array.
+
+Returns an empty array if the `output_index` does not correspond to any parent
+indices.
+
+# Arguments
+* `stride::Integer`: the size of the operating blocks along the active
+     dimension.
+
+"""
+function getsliceindex(input_array_size::Int, stride::Int, output_index::Int)::AbstractArray{Int, 1}
+    parent_start_index = (output_index-1)*stride+1
+    parent_end_index = min((output_index)*stride, input_array_size)
+    if parent_start_index > parent_end_index
+        return []
+    else
+        return parent_start_index:parent_end_index
+    end
+end
+
+"""
+For pooling operations on an array, returns a view of the parent array
+"""
+function getpoolview{T<:Any, N}(input_array::AbstractArray{T, N}, strides::NTuple{N, Int}, output_index::NTuple{N, Int})::SubArray{T, N}
+    it = zip(size(input_array), strides, output_index)
+    input_index_range = map((x)-> getsliceindex(x ...), it)
+    return view(input_array, input_index_range...)
+end
+
+function poolmap{T<:Any, N}(f::Function, input_array::AbstractArray{T, N}, strides::NTuple{N, Int})
+    output_size::NTuple{N, Int} = ((x, y) -> round(Int, x/y, RoundUp)).(size(input_array), strides)
+    output_indices = collect(CartesianRange(output_size))
+    return ((I) -> f(getpoolview(input_array, strides, I.I))).(output_indices)
+end
 
 """
 Imposes a rectified linearity constraint between `x` and `x_rect` using
@@ -83,7 +131,8 @@ end
 
 """
 Imposes a rectified linearity constraint between `x` and `x_rect` using
-the big-M formulation.
+the big-M formulation. Intended to be more efficient than reluconstraint
+by imposing fewer restrictions
 
 For `|x| < M`, `x_rect` = `x` if `x` > 0 and 0 otherwise.
 
@@ -110,6 +159,16 @@ end
 Imposes a max-pooling constraint between `x` and `x_pool` using the big-M
 formulation.
 
+`x` is divided into cells of size `strides`, and each entry of `x_pool`
+is equal to the maximum value in the corresponding cell.
+
+If the height (viz. width) of the input array `x` is not an integer multiple
+of the stride along the height (viz. width) as specified in strides, the bottom
+(viz. rightmost) cell's height (viz. width) is truncated, and we select the
+maximum value from the truncated cell.
+
+Note that `x` and `x_pool` must have sizes that match according to `strides`.
+
 TODO: finish up documentation
 """
 function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::Array{T, 4}, x_pool::Array{U, 4}, strides::Tuple{Integer, Integer}, M::Number)
@@ -132,8 +191,10 @@ function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScala
     @variable(model, a[1:length(x)], category = :Bin)
     a = reshape(a, size(x))
 
-    # TODO: Re-write by slicing the appropriate parts of a, x and x_pool and applying a more general operation to those slices.
+    # TODO: Re-write by slicing the appropriate parts of a, x and x_pool and applying a more general operation to those slices USING getpoolview
     # TODO: Ask robin whether ∃ more concise syntax for looping over a subset of variables
+    # TODO: Robin - can we do compile time checks?
+    # TODO: Robin - can we splat just some variables?
     @nloops 4 r x_pool begin
         a_sum = 0
         for i in 1:pool_height
@@ -142,14 +203,14 @@ function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScala
                     a_cur = a[r_1, (r_2-1)*pool_height+i, (r_3-1)*pool_width+j, r_4]
                     x_cur = x[r_1, (r_2-1)*pool_height+i, (r_3-1)*pool_width+j, r_4]
                     x_pool_cur = (@nref 4 x_pool r)
-                    @constraint(m4, x_pool_cur <= x_cur + M*(1-a_cur))
-                    @constraint(m4, x_pool_cur >= x_cur)
+                    @constraint(model, x_pool_cur <= x_cur + M*(1-a_cur))
+                    @constraint(model, x_pool_cur >= x_cur)
                     a_sum += a_cur # TODO: check with Robin, this summation here is probably quite inefficient
                 end
             end
         end
-    #     @constraint(m4, sum(a[r_1, (r_2-1)*pool_height+i, (r_3-1)*pool_width+j, r_4] for i=1:pool_height, j=1:pool_width) == 1)
-        @constraint(m4, a_sum == 1)
+    #     @constraint(model, sum(a[r_1, (r_2-1)*pool_height+i, (r_3-1)*pool_width+j, r_4] for i=1:pool_height, j=1:pool_width) == 1)
+        @constraint(model, a_sum == 1)
     end
 
 end
