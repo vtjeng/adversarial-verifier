@@ -172,7 +172,7 @@ Note that `x` and `x_pool` must have sizes that match according to `strides`.
 TODO: finish up documentation
 """
 function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::Array{T, 4}, x_pool::Array{U, 4}, strides::Tuple{Integer, Integer}, M::Number)
-    # TODO: check whether we can avoid having the user explicitly construct the pooled array.
+    # TODO: check whether we can avoid having the user explicitly construct the pooled array, or get it as a return value from this.
 
     (pool_height, pool_width) = strides
 
@@ -194,7 +194,6 @@ function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScala
     # TODO: Re-write by slicing the appropriate parts of a, x and x_pool and applying a more general operation to those slices USING getpoolview
     # TODO: Ask robin whether ∃ more concise syntax for looping over a subset of variables
     # TODO: Robin - can we do compile time checks?
-    # TODO: Robin - can we splat just some variables?
     @nloops 4 r x_pool begin
         a_sum = 0
         for i in 1:pool_height
