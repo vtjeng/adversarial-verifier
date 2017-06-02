@@ -1,6 +1,9 @@
+module NNOps
+
 using Base.Cartesian
 using JuMP
 using Gurobi
+
 """
 Computes a 2D-convolution given 4-D `input` and `filter` tensors.
 
@@ -164,7 +167,7 @@ function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScala
     @nloops 4 r x_pooled begin
         a_sum = 0
         x_pooled_cur = (@nref 4 x_pooled r)
-        getcurpoolview = (input_array) -> getpoolview(input_array, full_strides, (r_1, r_2, r_3, r_4))
+        getcurpoolview = (input_array) -> getpoolview(input_array, full_strides, @ntuple 4 r)
 
         for e in zip(getcurpoolview(a), getcurpoolview(x))
             (a_cur, x_cur) = e
@@ -174,5 +177,7 @@ function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScala
 
         @constraint(model, sum(getcurpoolview(a)) == 1)
     end
+
+end
 
 end
