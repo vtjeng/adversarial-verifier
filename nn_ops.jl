@@ -17,7 +17,7 @@ function conv2d{T, U}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
     (batch, in_height, in_width, input_in_channels) = size(input)
     (filter_height, filter_width, filter_in_channels, out_channels) = size(filter)
     if input_in_channels != filter_in_channels
-        throw(ArgumentError())
+        throw(ArgumentError(@printf "Number of channels in input %d does not match number of channels %d filters operate on." input_in_channels filter_in_channels))
     else
         in_channels = input_in_channels
     end
@@ -109,33 +109,6 @@ end
 
 """
 Imposes a rectified linearity constraint between `x` and `x_rect` using
-the big-M formulation.
-
-For `|x| < M`, `x_rect` = `x` if `x` > 0 and 0 otherwise.
-
-Note that `x` and `x_rect` must be arrays of the same size.
-
-"""
-function reluconstraint{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, x::Array{T, N}, x_rect::Array{U, N}, M::Number)
-    # TODO: Check with Robin whether you can change this into a macro.
-    # TODO: Support single-variable recitifed linearities
-    if size(x) != size(x_rect)
-        throw(ArgumentError())
-    end
-    @variable(model, a[1:length(x)], category = :Bin)
-    a = reshape(a, size(x))
-
-    @constraint(model, x_rect .<= M*a)
-    @constraint(model, x_rect .>= -M*a)
-    @constraint(model, x_rect .<= x + M*(1-a))
-    @constraint(model, x_rect .>= x - M*(1-a))
-    @constraint(model, x .>= M*(a-1))
-    @constraint(model, x .<= M*a)
-
-end
-
-"""
-Imposes a rectified linearity constraint between `x` and `x_rect` using
 the big-M formulation. Intended to be more efficient than reluconstraint
 by imposing fewer restrictions
 
@@ -145,13 +118,11 @@ Note that `x` and `x_rect` must be arrays of the same size.
 
 """
 function reluconstraint2{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, x::Array{T, N}, x_rect::Array{U, N}, M::Number)
-    # TODO: figure out whether this is truly equivalent to the above rectified
-    # linearity
     if size(x) != size(x_rect)
         throw(ArgumentError())
     end
-    @variable(model, a[1:length(x)], category = :Bin)
-    a = reshape(a, size(x))
+
+    a = reshape(@variable(model, [1:length(x)], category = :Bin), size(x))
 
     @constraint(model, x_rect .<= x + M*(1-a))
     @constraint(model, x_rect .>= x)
@@ -180,36 +151,28 @@ function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScala
     # TODO: check whether we can avoid having the user explicitly construct the pooled array, or get it as a return value from this.
 
     (pool_height, pool_width) = strides
+    full_strides = (1, pool_height, pool_width, 1)
 
-    (in_batch, in_height, in_width, in_channels) = size(x)
-    (out_batch, out_height, out_width, out_channels) = size(x_pooled)
-
-    batch_match = (out_batch==in_batch)
-    height_match = (out_height==round(Int, in_height/pool_height, RoundUp))
-    width_match = (out_width==round(Int, in_width/pool_width, RoundUp))
-    channel_match = (out_channels==in_channels)
-    if !(batch_match && height_match && width_match && channel_match)
+    if !(getoutputsize(x, full_strides) == size(x_pooled))
         throw(ArgumentError())
     end
+
     # TODO: Wrap matched variable size creation in helper function? Need to
     # figure out whether anonymous syntax allows for it though
-    @variable(model, a[1:length(x)], category = :Bin)
-    a = reshape(a, size(x))
+    a = reshape(@variable(model, [1:length(x)], category = :Bin), size(x))
 
-    # TODO: Robin - can we do compile time checks?
     @nloops 4 r x_pooled begin
         a_sum = 0
         x_pooled_cur = (@nref 4 x_pooled r)
-        getcurpoolview = (input_array) -> getpoolview(input_array, (1, strides[1], strides[2], 1), (r_1, r_2, r_3, r_4))
+        getcurpoolview = (input_array) -> getpoolview(input_array, full_strides, (r_1, r_2, r_3, r_4))
 
         for e in zip(getcurpoolview(a), getcurpoolview(x))
             (a_cur, x_cur) = e
             @constraint(model, x_pooled_cur <= x_cur + M*(1-a_cur))
             @constraint(model, x_pooled_cur >= x_cur)
-            a_sum += a_cur # TODO: check with Robin, this summation here is probably quite inefficient
         end
 
-        @constraint(model, a_sum == 1)
+        @constraint(model, sum(getcurpoolview(a)) == 1)
     end
 
 end
