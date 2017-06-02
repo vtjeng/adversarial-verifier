@@ -101,7 +101,6 @@ function getoutputsize{T<:Any, N}(input_array::AbstractArray{T, N}, strides::NTu
     return output_size
 end
 
-
 function poolmap{T<:Any, N}(f::Function, input_array::AbstractArray{T, N}, strides::NTuple{N, Int})
     output_size = getoutputsize(input_array, strides)
     output_indices = collect(CartesianRange(output_size))
@@ -162,10 +161,10 @@ function reluconstraint2{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScalar,
 end
 
 """
-Imposes a max-pooling constraint between `x` and `x_pool` using the big-M
+Imposes a max-pooling constraint between `x` and `x_pooled` using the big-M
 formulation.
 
-`x` is divided into cells of size `strides`, and each entry of `x_pool`
+`x` is divided into cells of size `strides`, and each entry of `x_pooled`
 is equal to the maximum value in the corresponding cell.
 
 If the height (viz. width) of the input array `x` is not an integer multiple
@@ -173,17 +172,17 @@ of the stride along the height (viz. width) as specified in strides, the bottom
 (viz. rightmost) cell's height (viz. width) is truncated, and we select the
 maximum value from the truncated cell.
 
-Note that `x` and `x_pool` must have sizes that match according to `strides`.
+Note that `x` and `x_pooled` must have sizes that match according to `strides`.
 
 TODO: finish up documentation
 """
-function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::Array{T, 4}, x_pool::Array{U, 4}, strides::Tuple{Integer, Integer}, M::Number)
+function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::Array{T, 4}, x_pooled::Array{U, 4}, strides::Tuple{Integer, Integer}, M::Number)
     # TODO: check whether we can avoid having the user explicitly construct the pooled array, or get it as a return value from this.
 
     (pool_height, pool_width) = strides
 
     (in_batch, in_height, in_width, in_channels) = size(x)
-    (out_batch, out_height, out_width, out_channels) = size(x_pool)
+    (out_batch, out_height, out_width, out_channels) = size(x_pooled)
 
     batch_match = (out_batch==in_batch)
     height_match = (out_height==round(Int, in_height/pool_height, RoundUp))
@@ -197,24 +196,19 @@ function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScala
     @variable(model, a[1:length(x)], category = :Bin)
     a = reshape(a, size(x))
 
-    # TODO: Re-write by slicing the appropriate parts of a, x and x_pool and applying a more general operation to those slices USING getpoolview
-    # TODO: Ask robin whether ∃ more concise syntax for looping over a subset of variables
     # TODO: Robin - can we do compile time checks?
-    @nloops 4 r x_pool begin
+    @nloops 4 r x_pooled begin
         a_sum = 0
-        for i in 1:pool_height
-            for j in 1:pool_width
-                if (r_2-1)*pool_height+i<=in_height && (r_3-1)*pool_width+j<=in_width
-                    a_cur = a[r_1, (r_2-1)*pool_height+i, (r_3-1)*pool_width+j, r_4]
-                    x_cur = x[r_1, (r_2-1)*pool_height+i, (r_3-1)*pool_width+j, r_4]
-                    x_pool_cur = (@nref 4 x_pool r)
-                    @constraint(model, x_pool_cur <= x_cur + M*(1-a_cur))
-                    @constraint(model, x_pool_cur >= x_cur)
-                    a_sum += a_cur # TODO: check with Robin, this summation here is probably quite inefficient
-                end
-            end
+        x_pooled_cur = (@nref 4 x_pooled r)
+        getcurpoolview = (input_array) -> getpoolview(input_array, (1, strides[1], strides[2], 1), (r_1, r_2, r_3, r_4))
+
+        for e in zip(getcurpoolview(a), getcurpoolview(x))
+            (a_cur, x_cur) = e
+            @constraint(model, x_pooled_cur <= x_cur + M*(1-a_cur))
+            @constraint(model, x_pooled_cur >= x_cur)
+            a_sum += a_cur # TODO: check with Robin, this summation here is probably quite inefficient
         end
-    #     @constraint(model, sum(a[r_1, (r_2-1)*pool_height+i, (r_3-1)*pool_width+j, r_4] for i=1:pool_height, j=1:pool_width) == 1)
+
         @constraint(model, a_sum == 1)
     end
 
