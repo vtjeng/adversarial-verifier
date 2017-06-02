@@ -5,6 +5,21 @@ using JuMP
 using Gurobi
 
 """
+For a convolution of `filter` on `input`, determines the size of the output.
+
+# Throws
+* ArgumentError if input and filter are not compatible.
+"""
+function getconv2doutputsize{T, U}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})::NTuple{4, Int}
+    (batch, in_height, in_width, input_in_channels) = size(input)
+    (filter_height, filter_width, filter_in_channels, out_channels) = size(filter)
+    if input_in_channels != filter_in_channels
+        throw(ArgumentError(@printf "Number of channels in input %d does not match number of channels %d filters operate on." input_in_channels filter_in_channels))
+    end
+    return (batch, in_height, in_width, out_channels)
+end
+
+"""
 Computes a 2D-convolution given 4-D `input` and `filter` tensors.
 
 Mirrors `tf.nn.conv2d` from `tensorflow` package, with `strides` = [1, 1, 1, 1],
@@ -19,11 +34,7 @@ function conv2d{T, U}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
     #  (4) Non-matching input_in_channels and filter_in_channels
     (batch, in_height, in_width, input_in_channels) = size(input)
     (filter_height, filter_width, filter_in_channels, out_channels) = size(filter)
-    if input_in_channels != filter_in_channels
-        throw(ArgumentError(@printf "Number of channels in input %d does not match number of channels %d filters operate on." input_in_channels filter_in_channels))
-    else
-        in_channels = input_in_channels
-    end
+    output_size = getconv2doutputsize(input, filter)
 
     # Considered using offset arrays here, but looks like it currently is not
     # really supported
@@ -35,7 +46,7 @@ function conv2d{T, U}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
     filter_height_offset = round(Int, filter_height/2, RoundUp)
     filter_width_offset = round(Int, filter_width/2, RoundUp)
 
-    output = Array(eltype(input), batch, in_height, in_width, out_channels)
+    output = Array(eltype(input), output_size...)
 
     @nloops 4 i output begin
         s = 0
@@ -56,12 +67,19 @@ function conv2d{T, U}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
 
 end
 
-function relu(x::Array)
+"""
+Computes the rectification of `x`
+"""
+function relu{T<:Real, N}(x::AbstractArray{T, N})::AbstractArray{T, N}
     return max(0, x)
 end
 
-function maxpool{T<:Number, N}(input_array::AbstractArray{T, N}, strides::NTuple{N, Int})
-    # tried to use pooling function from Knet.relu but it had way too many
+"""
+Computes the result of a max-pooling operation on `input_array` with specified
+`strides`.
+"""
+function maxpool{T<:Real, N}(input_array::AbstractArray{T, N}, strides::NTuple{N, Int})::AbstractArray{T, N}
+    # NB: Tried to use pooling function from Knet.relu but it had way too many
     # incompatibilities
     return poolmap(maximum, input_array, strides)
 end
@@ -69,10 +87,10 @@ end
 """
 For pooling operations on an array where a given element in the output array
 corresponds to equal-sized blocks in the input array, returns (for a given
-dimension) the index range in the parent array corresponding to a particular
-index `output_index` in the child array.
+dimension) the index range in the input array corresponding to a particular
+index `output_index` in the output array.
 
-Returns an empty array if the `output_index` does not correspond to any parent
+Returns an empty array if the `output_index` does not correspond to any input
 indices.
 
 # Arguments
@@ -92,22 +110,43 @@ end
 
 """
 For pooling operations on an array, returns a view of the parent array
+corresponding to the `output_index` in the output array.
 """
 function getpoolview{T<:Any, N}(input_array::AbstractArray{T, N}, strides::NTuple{N, Int}, output_index::NTuple{N, Int})::SubArray{T, N}
     it = zip(size(input_array), strides, output_index)
-    input_index_range = map((x)-> getsliceindex(x ...), it)
+    input_index_range = map((x)-> getsliceindex(x...), it)
     return view(input_array, input_index_range...)
 end
 
+"""
+For pooling operations on an array, returns the expected size of the output
+array.
+"""
 function getoutputsize{T<:Any, N}(input_array::AbstractArray{T, N}, strides::NTuple{N, Int})::NTuple{N, Int}
     output_size = ((x, y) -> round(Int, x/y, RoundUp)).(size(input_array), strides)
     return output_size
 end
 
+"""
+Returns output from applying `f` to subarrays of `input_array`, with the windows
+determined by the `strides`.
+"""
 function poolmap{T<:Any, N}(f::Function, input_array::AbstractArray{T, N}, strides::NTuple{N, Int})
     output_size = getoutputsize(input_array, strides)
     output_indices = collect(CartesianRange(output_size))
     return ((I) -> f(getpoolview(input_array, strides, I.I))).(output_indices)
+end
+
+"""
+Imposes a 2d convolution constraint between `x` and `x_conv` as determined by
+the filters.
+"""
+function conv2dconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4})::Array{JuMP.Variable, 4}
+    output_size = getconv2doutputsize(x, filter)
+    # TODO: @robin take care of this pattern of reshaping a variable while passing kwargs?
+    x_conv = reshape(@variable(model, [1:prod(output_size)]), output_size)
+    @constraint(model, conv2d(x, filter) .== x_conv)
+    return x_conv
 end
 
 """
@@ -120,18 +159,15 @@ For `|x| < M`, `x_rect` = `x` if `x` > 0 and 0 otherwise.
 Note that `x` and `x_rect` must be arrays of the same size.
 
 """
-function reluconstraint2{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, x::Array{T, N}, x_rect::Array{U, N}, M::Number)
-    if size(x) != size(x_rect)
-        throw(ArgumentError())
-    end
-
+function reluconstraint{T<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, x::AbstractArray{T, N}, M::Real)::Array{JuMP.Variable, N}
+    x_rect = reshape(@variable(model, [1:length(x)]), size(x))
     a = reshape(@variable(model, [1:length(x)], category = :Bin), size(x))
 
     @constraint(model, x_rect .<= x + M*(1-a))
     @constraint(model, x_rect .>= x)
     @constraint(model, x_rect .<= M*a)
     @constraint(model, x_rect .>= 0)
-
+    return x_rect
 end
 
 """
@@ -150,18 +186,13 @@ Note that `x` and `x_pooled` must have sizes that match according to `strides`.
 
 TODO: finish up documentation
 """
-function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::Array{T, 4}, x_pooled::Array{U, 4}, strides::Tuple{Integer, Integer}, M::Number)
-    # TODO: check whether we can avoid having the user explicitly construct the pooled array, or get it as a return value from this.
-
+function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::AbstractArray{T, 4}, strides::Tuple{Integer, Integer}, M::Real)::Array{JuMP.Variable, 4}
     (pool_height, pool_width) = strides
     full_strides = (1, pool_height, pool_width, 1)
 
-    if !(getoutputsize(x, full_strides) == size(x_pooled))
-        throw(ArgumentError())
-    end
+    x_pooled_size = getoutputsize(x, full_strides)
+    x_pooled = reshape(@variable(model, [1:prod(x_pooled_size)]), x_pooled_size)
 
-    # TODO: Wrap matched variable size creation in helper function? Need to
-    # figure out whether anonymous syntax allows for it though
     a = reshape(@variable(model, [1:length(x)], category = :Bin), size(x))
 
     @nloops 4 r x_pooled begin
@@ -177,6 +208,7 @@ function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar, U<:JuMP.AbstractJuMPScala
 
         @constraint(model, sum(getcurpoolview(a)) == 1)
     end
+    return x_pooled
 
 end
 
