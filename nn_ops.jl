@@ -57,6 +57,9 @@ function conv2d{T, U}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
                 # Doing bounds check to make sure that we stay within bounds
                 # for input. This effectively zero-pads the input.
                 # TODO: Use default checkbounds function here instead?
+                # TODO: Addition here is a bottleneck; figure out whether
+                # you could use append without making this incompatible
+                # with normal numbers
                 s += input[i_1, x, y, j_3] * filter[j_1, j_2, j_3, j_4]
             end
         end
