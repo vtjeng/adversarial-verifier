@@ -96,8 +96,14 @@ function getpoolview{T<:Any, N}(input_array::AbstractArray{T, N}, strides::NTupl
     return view(input_array, input_index_range...)
 end
 
+function getoutputsize{T<:Any, N}(input_array::AbstractArray{T, N}, strides::NTuple{N, Int})::NTuple{N, Int}
+    output_size = ((x, y) -> round(Int, x/y, RoundUp)).(size(input_array), strides)
+    return output_size
+end
+
+
 function poolmap{T<:Any, N}(f::Function, input_array::AbstractArray{T, N}, strides::NTuple{N, Int})
-    output_size::NTuple{N, Int} = ((x, y) -> round(Int, x/y, RoundUp)).(size(input_array), strides)
+    output_size = getoutputsize(input_array, strides)
     output_indices = collect(CartesianRange(output_size))
     return ((I) -> f(getpoolview(input_array, strides, I.I))).(output_indices)
 end
