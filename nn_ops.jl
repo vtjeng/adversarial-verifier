@@ -25,8 +25,7 @@ Computes a 2D-convolution given 4-D `input` and `filter` tensors.
 Mirrors `tf.nn.conv2d` from `tensorflow` package, with `strides` = [1, 1, 1, 1],
  `padding` = 'SAME'.
 """
-function conv2d{T, U}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
-
+function conv2d{T<:Real, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
     # TEST PLAN:
     #  (1) Incorrectly sized input,
     #  (2) Incorrectly sized filter,
@@ -45,8 +44,8 @@ function conv2d{T, U}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
     # replicate here.
     filter_height_offset = round(Int, filter_height/2, RoundUp)
     filter_width_offset = round(Int, filter_width/2, RoundUp)
+    output = Array{T}(output_size)
 
-    output = Array(eltype(input), output_size...)
 
     @nloops 4 i output begin
         s = 0
@@ -71,20 +70,81 @@ function conv2d{T, U}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
 end
 
 """
+Computes a 2D-convolution given 4-D `input` and `filter` tensors.
+
+Mirrors `tf.nn.conv2d` from `tensorflow` package, with `strides` = [1, 1, 1, 1],
+ `padding` = 'SAME'.
+"""
+function conv2d{T<:JuMP.AbstractJuMPScalar, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
+    # TEST PLAN:
+    #  (1) Incorrectly sized input,
+    #  (2) Incorrectly sized filter,
+    #  (3) Non-matching elements of array
+    #  (4) Non-matching input_in_channels and filter_in_channels
+    (batch, in_height, in_width, input_in_channels) = size(input)
+    (filter_height, filter_width, filter_in_channels, out_channels) = size(filter)
+    output_size = getconv2doutputsize(input, filter)
+
+    # Considered using offset arrays here, but looks like it currently is not
+    # really supported
+
+    # Calculating appropriate offsets so that center of kernel is matched with
+    # cell at which correlation is being calculated. Note that tensorflow
+    # chooses a specific convention for a dimension with even size which we
+    # replicate here.
+    filter_height_offset = round(Int, filter_height/2, RoundUp)
+    filter_width_offset = round(Int, filter_width/2, RoundUp)
+    output = Array{JuMP.AbstractJuMPScalar}(output_size)
+
+
+    @nloops 4 i output begin
+        s = AffExpr([], [], 0)
+        @nloops 4 j filter begin
+            x = i_2 + j_1 - filter_height_offset
+            y = i_3 + j_2 - filter_width_offset
+            if x > 0 && y > 0 && x<=in_height && y<=in_width
+                # Doing bounds check to make sure that we stay within bounds
+                # for input. This effectively zero-pads the input.
+                # TODO: Use default checkbounds function here instead?
+                # TODO: Addition here is a bottleneck; figure out whether
+                # you could use append without making this incompatible
+                # with normal numbers
+                s += input[i_1, x, y, j_3] * filter[j_1, j_2, j_3, j_4]
+            end
+        end
+        (@nref 4 output i) = s
+    end
+
+    return output
+
+end
+
+"""
 Computes the rectification of `x`
 """
-function relu{T<:Real, N}(x::AbstractArray{T, N})::AbstractArray{T, N}
-    return max(0, x)
+function relu{T<:Real, N}(input::AbstractArray{T, N})::AbstractArray{T, N}
+    return max(0, input)
 end
 
 """
 Computes the result of a max-pooling operation on `input_array` with specified
 `strides`.
 """
-function maxpool{T<:Real, N}(input_array::AbstractArray{T, N}, strides::NTuple{N, Int})::AbstractArray{T, N}
+function maxpool{T<:Real, N}(input::AbstractArray{T, N}, strides::NTuple{N, Int})::AbstractArray{T, N}
     # NB: Tried to use pooling function from Knet.relu but it had way too many
     # incompatibilities
-    return poolmap(maximum, input_array, strides)
+    return poolmap(maximum, input, strides)
+end
+
+function convlayer{T, U}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, strides::NTuple{4, Int})
+    return maxpool(relu(conv2d(input, filter)), strides)
+end
+
+# TODO: make type annotations more specific for all added code in this commit
+
+function fullyconnectedlayer{T, U}(input::AbstractArray{T, 1}, weights::AbstractArray{U, 2})
+    # return weights*input
+    return relu(weights*input)
 end
 
 """
@@ -212,7 +272,34 @@ function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::Abs
         @constraint(model, sum(getcurpoolview(a)) == 1)
     end
     return x_pooled
+end
 
+function convlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, strides::Tuple{Integer, Integer}, M::Real)::Array{JuMP.Variable, 4}
+    x_conv = conv2dconstraint(model, x, filter)
+    x_relu = reluconstraint(model, x_conv, M)
+    x_maxpool = maxpoolconstraint(model, x_relu, strides, M)
+    return x_maxpool
+end
+
+function matmulconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2})::Array{JuMP.Variable, 1}
+    # TODO: error checking
+    (in_height, in_width) = size(weights)
+    x_matmul = @variable(model, [1:in_height])
+    @constraint(model, x_matmul .== weights*x)
+    return x_matmul
+end
+
+function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, M::Real)::Array{JuMP.Variable, 1}
+    return reluconstraint(model, matmulconstraint(model, x, weights), M)
+end
+
+# TODO: refactor fully connected layer to make non-linearity constraint optional
+# TODO: refactor softmax to apply on signle variable
+
+function softmaxconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, target_index::Integer)
+    # TODO: error checking on target index
+    x_matmul = matmulconstraint(model, x, weights)
+    @constraint(model, x_matmul - x_matmul[target_index].<= 0)
 end
 
 end

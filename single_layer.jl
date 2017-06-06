@@ -1,8 +1,8 @@
 include("nn_ops.jl")
 
 batch = 1
-in_height = 20
-in_width = 20
+in_height = 6
+in_width = 6
 stride_height = 2
 stride_width = 2
 pooled_height = round(Int, in_height/stride_height, RoundUp)
