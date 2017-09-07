@@ -46,7 +46,6 @@ function conv2d{T<:Real, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractAr
     filter_width_offset = round(Int, filter_width/2, RoundUp)
     output = Array{T}(output_size)
 
-
     @nloops 4 i output begin
         s = 0
         @nloops 4 j filter begin
@@ -70,17 +69,9 @@ function conv2d{T<:Real, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractAr
 end
 
 """
-Computes a 2D-convolution given 4-D `input` and `filter` tensors.
-
-Mirrors `tf.nn.conv2d` from `tensorflow` package, with `strides` = [1, 1, 1, 1],
- `padding` = 'SAME'.
+Same as `conv2d` above, but optimized for adding scalars together.
 """
-function conv2d{T<:JuMP.AbstractJuMPScalar, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
-    # TEST PLAN:
-    #  (1) Incorrectly sized input,
-    #  (2) Incorrectly sized filter,
-    #  (3) Non-matching elements of array
-    #  (4) Non-matching input_in_channels and filter_in_channels
+function conv2d{T<:JuMP.GenericAffExpr, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
     (batch, in_height, in_width, input_in_channels) = size(input)
     (filter_height, filter_width, filter_in_channels, out_channels) = size(filter)
     output_size = getconv2doutputsize(input, filter)
@@ -94,8 +85,7 @@ function conv2d{T<:JuMP.AbstractJuMPScalar, U<:Real}(input::AbstractArray{T, 4},
     # replicate here.
     filter_height_offset = round(Int, filter_height/2, RoundUp)
     filter_width_offset = round(Int, filter_width/2, RoundUp)
-    output = Array{JuMP.AbstractJuMPScalar}(output_size)
-
+    output = Array{T}(output_size)
 
     @nloops 4 i output begin
         s = AffExpr([], [], 0)
@@ -103,13 +93,7 @@ function conv2d{T<:JuMP.AbstractJuMPScalar, U<:Real}(input::AbstractArray{T, 4},
             x = i_2 + j_1 - filter_height_offset
             y = i_3 + j_2 - filter_width_offset
             if x > 0 && y > 0 && x<=in_height && y<=in_width
-                # Doing bounds check to make sure that we stay within bounds
-                # for input. This effectively zero-pads the input.
-                # TODO: Use default checkbounds function here instead?
-                # TODO: Addition here is a bottleneck; figure out whether
-                # you could use append without making this incompatible
-                # with normal numbers
-                s += input[i_1, x, y, j_3] * filter[j_1, j_2, j_3, j_4]
+                append!(s, filter[j_1, j_2, j_3, j_4] * input[i_1, x, y, j_3])
             end
         end
         (@nref 4 output i) = s
