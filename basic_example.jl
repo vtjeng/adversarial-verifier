@@ -1,6 +1,10 @@
 using JuMP
 using Gurobi
 
+"""
+Basic example showing the solver at work.
+"""
+
 m = Model(solver=GurobiSolver())
 
 @variable(m, 0 <= x <= 2)

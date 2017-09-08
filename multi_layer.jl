@@ -1,5 +1,10 @@
 include("nn_ops.jl")
 
+"""
+Basic example where we express the constraints for a neural net consisting
+of two layers: 1) a convolution layer, and 2) a fully connected layer.
+"""
+
 batch = 1
 in_height = 10
 in_width = 10
@@ -27,9 +32,6 @@ A = rand(-10:10, A_height, A_width)
 B = rand(-10:10, B_height, B_width)
 x1_actual = NNOps.convlayer(x_actual, filter, (1, stride_height, stride_width, 1));
 x2_actual = NNOps.fullyconnectedlayer(x1_actual[:], A)
-# x_conv_actual = NNOps.conv2d(x_actual, filter)
-# x_conv_relu_actual = NNOps.relu(x_conv_actual)
-# x_conv_relu_maxpool_actual = NNOps.maxpool(x_conv_relu_actual, (1, 2, 2, 1));
 
 using JuMP
 using Gurobi
@@ -39,22 +41,7 @@ m = Model(solver=GurobiSolver())
 @variable(m, ve[1:batch, 1:in_height, 1:in_width, 1:in_channels])
 @variable(m, vx[1:batch, 1:in_height, 1:in_width, 1:in_channels])
 @variable(m, vx_conv[1:batch, 1:in_height, 1:in_width, 1:out_channels])
-# @variable(m, vx_conv_relu[1:batch, 1:in_height, 1:in_width, 1:out_channels])
-# @variable(m, vx_conv_relu_maxpool[1:batch, 1:pooled_height, 1:pooled_width, 1:out_channels])
 @constraint(m, vx .== x_current) # input
-
-# 1. Only using convolution constraint
-# vx_conv = NNOps.conv2dconstraint(m, vx+ve, filter)
-# @constraint(m, conv2d(vx+ve, filter) .== vx_conv)
-# @constraint(m, vx_conv .== x_conv_actual)
-
-# 2. Adding relu layer
-# vx_conv_relu = NNOps.reluconstraint(m, vx_conv, 10000)
-# @constraint(m, vx_conv_relu .== x_conv_relu_actual)
-
-# 3. Adding maxpool layer
-# vx_conv_relu_maxpool = NNOps.maxpoolconstraint(m, vx_conv_relu, (2, 2), 10000)
-# @constraint(m, vx_conv_relu_maxpool .== x_conv_relu_maxpool_actual)
 
 # 1-3a. Directly adding constraints
 vx1 = NNOps.convlayerconstraint(m, vx+ve, filter, (stride_height, stride_width), 10000)
@@ -72,7 +59,6 @@ NNOps.softmaxconstraint(m, vx2, B, 1)
 status = solve(m)
 
 println("Objective value: ", getobjectivevalue(m))
-# TODO: Are jump solutions global? Can I save particular variables?
 println("e = ", getvalue(ve))
 
 

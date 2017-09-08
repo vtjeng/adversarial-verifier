@@ -190,7 +190,8 @@ the filters.
 """
 function conv2dconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4})::Array{JuMP.Variable, 4}
     output_size = getconv2doutputsize(x, filter)
-    # TODO: @robin take care of this pattern of reshaping a variable while passing kwargs?
+    # TODO: @robin How to take care of this pattern of reshaping a variable
+    # while passing kwargs?
     x_conv = reshape(@variable(model, [1:prod(output_size)]), output_size)
     @constraint(model, conv2d(x, filter) .== x_conv)
     return x_conv
