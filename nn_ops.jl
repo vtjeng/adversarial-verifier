@@ -3,6 +3,7 @@ module NNOps
 using Base.Cartesian
 using JuMP
 using Gurobi
+using Juno
 
 """
 For a convolution of `filter` on `input`, determines the size of the output.
@@ -65,13 +66,12 @@ function conv2d{T<:Real, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractAr
     end
 
     return output
-
 end
 
 """
-Same as `conv2d` above, but optimized for adding scalars together.
+Same as `conv2d` above, but optimized for JuMP affine expressions.
 """
-function conv2d{T<:JuMP.GenericAffExpr, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
+function conv2d{T<:JuMP.AffExpr, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
     (batch, in_height, in_width, input_in_channels) = size(input)
     (filter_height, filter_width, filter_in_channels, out_channels) = size(filter)
     output_size = getconv2doutputsize(input, filter)
@@ -85,10 +85,10 @@ function conv2d{T<:JuMP.GenericAffExpr, U<:Real}(input::AbstractArray{T, 4}, fil
     # replicate here.
     filter_height_offset = round(Int, filter_height/2, RoundUp)
     filter_width_offset = round(Int, filter_width/2, RoundUp)
-    output = Array{T}(output_size)
+    output = Array{JuMP.AffExpr}(output_size)
 
     @nloops 4 i output begin
-        s = AffExpr([], [], 0)
+        s = AffExpr()
         @nloops 4 j filter begin
             x = i_2 + j_1 - filter_height_offset
             y = i_3 + j_2 - filter_width_offset
@@ -100,7 +100,41 @@ function conv2d{T<:JuMP.GenericAffExpr, U<:Real}(input::AbstractArray{T, 4}, fil
     end
 
     return output
+end
 
+"""
+Same as `conv2d` above, but optimized for JuMP variables.
+"""
+function conv2d{T<:JuMP.Variable, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
+    (batch, in_height, in_width, input_in_channels) = size(input)
+    (filter_height, filter_width, filter_in_channels, out_channels) = size(filter)
+    output_size = getconv2doutputsize(input, filter)
+    # Considered using offset arrays here, but looks like it currently is not
+    # really supported
+
+    # Calculating appropriate offsets so that center of kernel is matched with
+    # cell at which correlation is being calculated. Note that tensorflow
+    # chooses a specific convention for a dimension with even size which we
+    # replicate here.
+    filter_height_offset = round(Int, filter_height/2, RoundUp)
+    filter_width_offset = round(Int, filter_width/2, RoundUp)
+    output = Array{JuMP.AffExpr}(output_size)
+
+    @nloops 4 i output begin
+        s = AffExpr()
+        @nloops 4 j filter begin
+            x = i_2 + j_1 - filter_height_offset
+            y = i_3 + j_2 - filter_width_offset
+            if x > 0 && y > 0 && x<=in_height && y<=in_width
+                new_coeff = Float64(filter[j_1, j_2, j_3, j_4])
+                new_var = input[i_1, x, y, j_3]
+                push!(s, new_coeff, new_var)
+            end
+        end
+        (@nref 4 output i) = s
+    end
+
+    return output
 end
 
 """
@@ -279,7 +313,7 @@ function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(mode
 end
 
 # TODO: refactor fully connected layer to make non-linearity constraint optional
-# TODO: refactor softmax to apply on signle variable
+# TODO: refactor softmax to apply on single variable
 
 function softmaxconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, target_index::Integer)
     # TODO: error checking on target index

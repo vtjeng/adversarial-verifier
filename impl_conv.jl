@@ -2,7 +2,7 @@ include("nn_ops.jl")
 
 """
 Basic example where we express the constraints for a neural net consisting
-of a single layer.
+of a single convolution layer.
 """
 
 # We specify the parameters for the size of the problem that we are solving.

@@ -6,8 +6,8 @@ of two layers: 1) a convolution layer, and 2) a fully connected layer.
 """
 
 batch = 1
-in_height = 10
-in_width = 10
+in_height = 6
+in_width = 6
 stride_height = 2
 stride_width = 2
 pooled_height = round(Int, in_height/stride_height, RoundUp)
@@ -18,10 +18,10 @@ filter_width = 2
 out_channels = 2
 bigM = 10000
 
-A_height = 10
+A_height = 5
 A_width = pooled_height*pooled_width*out_channels
 
-B_height = 5
+B_height = 2
 B_width = A_height
 
 srand(5)
@@ -41,17 +41,10 @@ m = Model(solver=GurobiSolver())
 @variable(m, ve[1:batch, 1:in_height, 1:in_width, 1:in_channels])
 @variable(m, vx[1:batch, 1:in_height, 1:in_width, 1:in_channels])
 @variable(m, vx_conv[1:batch, 1:in_height, 1:in_width, 1:out_channels])
-@constraint(m, vx .== x_current) # input
+@constraint(m, vx .== x_current + ve) # input
 
-# 1-3a. Directly adding constraints
-vx1 = NNOps.convlayerconstraint(m, vx+ve, filter, (stride_height, stride_width), 10000)
-# @constraint(m, vx1 .== x1_actual)
-
-# 4. Add fully connected layer
+vx1 = NNOps.convlayerconstraint(m, vx, filter, (stride_height, stride_width), 10000)
 vx2 = NNOps.fullyconnectedlayerconstraint(m, vx1[:], A, 10000)
-# @constraint(m, vx2 .== x2_actual)
-
-# 5. add softmax layer
 NNOps.softmaxconstraint(m, vx2, B, 1)
 
 @objective(m, Min, sum(ve.^2))
