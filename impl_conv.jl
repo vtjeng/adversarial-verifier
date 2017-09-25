@@ -3,6 +3,16 @@ include("nn_ops.jl")
 """
 Basic example where we express the constraints for a neural net consisting
 of a single convolution layer.
+
+We ensure that the output constraint is achievable by passing in some input
+through the neural net.
+
+Conventions:
+  + x0: Array{Real} input corresponding to the output we are attempting to achieve (a.k.a "target input")
+  + x_input: Array{Real} input that we are perturbing
+  + xk: Array{Real} activation at kth layer of neural net to target input
+  + vx0: Array{AbstractJuMPScalar} perturbed input to neural net (a.k.a. "perturbed input")
+  + vxk: Array{AbstractJuMPScalar} activation at kth layer to perturbed input
 """
 
 # We specify the parameters for the size of the problem that we are solving.
@@ -14,7 +24,7 @@ stride_width = 2
 in_channels = 1
 filter_height = 5
 filter_width = 5
-out_channels = 32
+out_channels = 4
 bigM = 10000
 
 pooled_height = round(Int, in_height/stride_height, RoundUp)
@@ -29,13 +39,11 @@ filter = rand(-10:10, filter_height, filter_width, in_channels, out_channels)
 # We select some random input, and determine the activations at each layer
 # for that input.
 # `x_conv_relu_maxpool_actual` is the target output that we will seek to
-# achieve by perturbing `x_current`.
-x_actual = rand(-10:10, batch, in_height, in_width, in_channels)
-x_conv_actual = NNOps.conv2d(x_actual, filter)
-x_conv_relu_actual = NNOps.relu(x_conv_actual)
-x_conv_relu_maxpool_actual = NNOps.maxpool(x_conv_relu_actual, (1, 2, 2, 1))
+# achieve by perturbing `x_input`.
+x0 = rand(-10:10, batch, in_height, in_width, in_channels)
+x1 = NNOps.convlayer(x0, filter, (2, 2))
 
-x_current = rand(-10:10, batch, in_height, in_width, in_channels)
+x_input = rand(-10:10, batch, in_height, in_width, in_channels)
 
 using JuMP
 using Gurobi
@@ -48,19 +56,11 @@ m = Model(solver=GurobiSolver())
 # perturbations.
 @variable(m, ve[1:batch, 1:in_height, 1:in_width, 1:in_channels])
 @objective(m, Min, sum(ve.^2))
-@variable(m, vx[1:batch, 1:in_height, 1:in_width, 1:in_channels])
-@constraint(m, vx .== x_current)
+@variable(m, vx0[1:batch, 1:in_height, 1:in_width, 1:in_channels])
+@constraint(m, vx0 .== x_input + ve)
 
-# 1a. Apply convolution constraint.
-@variable(m, vx_conv[1:batch, 1:in_height, 1:in_width, 1:out_channels])
-vx_conv = NNOps.conv2dconstraint(m, vx+ve, filter)
-
-# 1b. Apply relu constraint.
-vx_conv_relu = NNOps.reluconstraint(m, vx_conv, bigM)
-
-# 1c. Apply maxpool constraint.
-vx_conv_relu_maxpool = NNOps.maxpoolconstraint(m, vx_conv_relu, (2, 2), bigM)
-@constraint(m, vx_conv_relu_maxpool .== x_conv_relu_maxpool_actual)
+vx1 = NNOps.convlayerconstraint(m, vx0, filter, (2, 2), bigM)
+@constraint(m, vx1 .== x1);
 
 status = solve(m)
 

@@ -3,7 +3,6 @@ module NNOps
 using Base.Cartesian
 using JuMP
 using Gurobi
-using Juno
 
 """
 For a convolution of `filter` on `input`, determines the size of the output.
@@ -20,6 +19,7 @@ function getconv2doutputsize{T, U}(input::AbstractArray{T, 4}, filter::AbstractA
     return (batch, in_height, in_width, out_channels)
 end
 
+# TODO: Really test this conv2d logic!!!
 """
 Computes a 2D-convolution given 4-D `input` and `filter` tensors.
 
@@ -50,16 +50,18 @@ function conv2d{T<:Real, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractAr
     @nloops 4 i output begin
         s = 0
         @nloops 4 j filter begin
-            x = i_2 + j_1 - filter_height_offset
-            y = i_3 + j_2 - filter_width_offset
-            if x > 0 && y > 0 && x<=in_height && y<=in_width
-                # Doing bounds check to make sure that we stay within bounds
-                # for input. This effectively zero-pads the input.
-                # TODO: Use default checkbounds function here instead?
-                # TODO: Addition here is a bottleneck; figure out whether
-                # you could use append without making this incompatible
-                # with normal numbers
-                s += input[i_1, x, y, j_3] * filter[j_1, j_2, j_3, j_4]
+            if i_4 == j_4
+                x = i_2 + j_1 - filter_height_offset
+                y = i_3 + j_2 - filter_width_offset
+                if x > 0 && y > 0 && x<=in_height && y<=in_width
+                    # Doing bounds check to make sure that we stay within bounds
+                    # for input. This effectively zero-pads the input.
+                    # TODO: Use default checkbounds function here instead?
+                    # TODO: Addition here is a bottleneck; figure out whether
+                    # you could use append without making this incompatible
+                    # with normal numbers
+                    s += input[i_1, x, y, j_3] * filter[j_1, j_2, j_3, j_4]
+                end
             end
         end
         (@nref 4 output i) = s
@@ -90,10 +92,12 @@ function conv2d{T<:JuMP.AffExpr, U<:Real}(input::AbstractArray{T, 4}, filter::Ab
     @nloops 4 i output begin
         s = AffExpr()
         @nloops 4 j filter begin
-            x = i_2 + j_1 - filter_height_offset
-            y = i_3 + j_2 - filter_width_offset
-            if x > 0 && y > 0 && x<=in_height && y<=in_width
-                append!(s, filter[j_1, j_2, j_3, j_4] * input[i_1, x, y, j_3])
+            if i_4 == j_4
+                x = i_2 + j_1 - filter_height_offset
+                y = i_3 + j_2 - filter_width_offset
+                if x > 0 && y > 0 && x<=in_height && y<=in_width
+                    append!(s, filter[j_1, j_2, j_3, j_4] * input[i_1, x, y, j_3])
+                end
             end
         end
         (@nref 4 output i) = s
@@ -123,12 +127,14 @@ function conv2d{T<:JuMP.Variable, U<:Real}(input::AbstractArray{T, 4}, filter::A
     @nloops 4 i output begin
         s = AffExpr()
         @nloops 4 j filter begin
-            x = i_2 + j_1 - filter_height_offset
-            y = i_3 + j_2 - filter_width_offset
-            if x > 0 && y > 0 && x<=in_height && y<=in_width
-                new_coeff = Float64(filter[j_1, j_2, j_3, j_4])
-                new_var = input[i_1, x, y, j_3]
-                push!(s, new_coeff, new_var)
+            if i_4 == j_4
+                x = i_2 + j_1 - filter_height_offset
+                y = i_3 + j_2 - filter_width_offset
+                if x > 0 && y > 0 && x<=in_height && y<=in_width
+                    new_coeff = Float64(filter[j_1, j_2, j_3, j_4])
+                    new_var = input[i_1, x, y, j_3]
+                    push!(s, new_coeff, new_var)
+                end
             end
         end
         (@nref 4 output i) = s
@@ -233,8 +239,7 @@ end
 
 """
 Imposes a rectified linearity constraint between `x` and `x_rect` using
-the big-M formulation. Intended to be more efficient than reluconstraint
-by imposing fewer restrictions
+the big-M formulation.
 
 For `|x| < M`, `x_rect` = `x` if `x` > 0 and 0 otherwise.
 
@@ -295,10 +300,18 @@ end
 
 function convlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, strides::Tuple{Integer, Integer}, M::Real)::Array{JuMP.Variable, 4}
     x_conv = conv2dconstraint(model, x, filter)
-    x_relu = reluconstraint(model, x_conv, M)
-    x_maxpool = maxpoolconstraint(model, x_relu, strides, M)
-    return x_maxpool
+    x_maxpool = maxpoolconstraint(model, x_conv, strides, M)
+    x_relu = reluconstraint(model, x_maxpool, M)
+    return x_relu
 end
+
+function convlayer{T<:Real, U<:Real}(x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, strides::Tuple{Integer, Integer})::Array{Real, 4}
+    x_conv = conv2d(x, filter)
+    x_maxpool = maxpool(x_conv, (1, strides[1], strides[2], 1))
+    x_relu = relu(x_maxpool)
+    return x_relu
+end
+
 
 function matmulconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2})::Array{JuMP.Variable, 1}
     # TODO: error checking
@@ -312,6 +325,10 @@ function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(mode
     return reluconstraint(model, matmulconstraint(model, x, weights), M)
 end
 
+function fullyconnectedlayer{T<:Real, U<:Real}(x::AbstractArray{T, 1}, weights::AbstractArray{U, 2})
+    return NNOps.relu(weights*x)
+end
+
 # TODO: refactor fully connected layer to make non-linearity constraint optional
 # TODO: refactor softmax to apply on single variable
 
@@ -319,6 +336,10 @@ function softmaxconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Mode
     # TODO: error checking on target index
     x_matmul = matmulconstraint(model, x, weights)
     @constraint(model, x_matmul - x_matmul[target_index].<= 0)
+end
+
+function softmaxindex{T<:Real, U<:Real}(x::AbstractArray{T, 1}, weights::AbstractArray{U, 2})
+    return findmax(weights*x)[2]
 end
 
 end

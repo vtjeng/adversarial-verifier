@@ -1,15 +1,17 @@
 include("nn_ops.jl")
 
 batch = 1
-in1_height = 10
-in1_width = 10
+# TODO: in1_height and in1_width should actually be 28, but we are
+# currently reducing this so that computation is a bit easier.
+in1_height = 12
+in1_width = 12
 stride1_height = 2
 stride1_width = 2
 pooled1_height = round(Int, in1_height/stride1_height, RoundUp)
 pooled1_width = round(Int, in1_width/stride1_width, RoundUp)
 in1_channels = 1
-filter1_height = 4
-filter1_width = 4
+filter1_height = 5
+filter1_width = 5
 out1_channels = 4
 
 in2_height = pooled1_height
@@ -19,9 +21,9 @@ stride2_width = 2
 pooled2_height = round(Int, in2_height/stride2_height, RoundUp)
 pooled2_width = round(Int, in2_width/stride2_width, RoundUp)
 in2_channels = out1_channels
-filter2_height = 2
-filter2_width = 2
-out2_channels = 2
+filter2_height = 5
+filter2_width = 5
+out2_channels = 8
 
 bigM = 10000
 
@@ -42,7 +44,6 @@ B = rand(-10:10, B_height, B_width)
 x1 = NNOps.convlayer(x0, filter1, (stride1_height, stride1_width))
 x2 = NNOps.convlayer(x1, filter2, (stride2_height, stride2_width))
 x3 = NNOps.fullyconnectedlayer(x2[:], A)
-println(B*x3)
 target_index = NNOps.softmaxindex(x3, B)
 
 using JuMP
