@@ -14,7 +14,7 @@ function getconv2doutputsize{T, U}(input::AbstractArray{T, 4}, filter::AbstractA
     (batch, in_height, in_width, input_in_channels) = size(input)
     (filter_height, filter_width, filter_in_channels, out_channels) = size(filter)
     if input_in_channels != filter_in_channels
-        throw(ArgumentError(@printf "Number of channels in input %d does not match number of channels %d filters operate on." input_in_channels filter_in_channels))
+        throw(ArgumentError("Number of channels in input, $input_in_channels, does not match number of channels, $filter_in_channels, that filters operate on."))
     end
     return (batch, in_height, in_width, out_channels)
 end
@@ -26,14 +26,22 @@ Computes a 2D-convolution given 4-D `input` and `filter` tensors.
 Mirrors `tf.nn.conv2d` from `tensorflow` package, with `strides` = [1, 1, 1, 1],
  `padding` = 'SAME'.
 """
-function conv2d{T<:Real, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
+function conv2d{T<:Union{Real, JuMP.AffExpr, JuMP.Variable}, U<:Real, V<:Real}(
+    input::AbstractArray{T, 4},
+    filter::AbstractArray{U, 4},
+    bias::AbstractArray{V, 1})
     # TEST PLAN:
     #  (1) Incorrectly sized input,
     #  (2) Incorrectly sized filter,
     #  (3) Non-matching elements of array
     #  (4) Non-matching input_in_channels and filter_in_channels
     (batch, in_height, in_width, input_in_channels) = size(input)
-    (filter_height, filter_width, filter_in_channels, out_channels) = size(filter)
+    (filter_height, filter_width, filter_in_channels, filter_out_channels) = size(filter)
+    bias_out_channels = length(bias)
+    if filter_out_channels != bias_out_channels
+        throw(ArgumentError("Number of output channels in filter, $filter_out_channels, does not match number of output channels in bias, $bias_out_channels."))
+    end
+
     output_size = getconv2doutputsize(input, filter)
 
     # Considered using offset arrays here, but looks like it currently is not
@@ -45,10 +53,11 @@ function conv2d{T<:Real, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractAr
     # replicate here.
     filter_height_offset = round(Int, filter_height/2, RoundUp)
     filter_width_offset = round(Int, filter_width/2, RoundUp)
-    output = Array{T}(output_size)
+    W = Base.promote_op(+, V, Base.promote_op(*, T, U))
+    output = Array{W}(output_size)
 
     @nloops 4 i output begin
-        s = 0
+        s::W = 0
         @nloops 4 j filter begin
             if i_4 == j_4
                 x = i_2 + j_1 - filter_height_offset
@@ -60,87 +69,28 @@ function conv2d{T<:Real, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractAr
                     # TODO: Addition here is a bottleneck; figure out whether
                     # you could use append without making this incompatible
                     # with normal numbers
-                    s += input[i_1, x, y, j_3] * filter[j_1, j_2, j_3, j_4]
+                    s = increment!(s, input[i_1, x, y, j_3], filter[j_1, j_2, j_3, j_4])
                 end
             end
         end
+        s += bias[i_4]
         (@nref 4 output i) = s
     end
 
     return output
 end
 
-"""
-Same as `conv2d` above, but optimized for JuMP affine expressions.
-"""
-function conv2d{T<:JuMP.AffExpr, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
-    (batch, in_height, in_width, input_in_channels) = size(input)
-    (filter_height, filter_width, filter_in_channels, out_channels) = size(filter)
-    output_size = getconv2doutputsize(input, filter)
-
-    # Considered using offset arrays here, but looks like it currently is not
-    # really supported
-
-    # Calculating appropriate offsets so that center of kernel is matched with
-    # cell at which correlation is being calculated. Note that tensorflow
-    # chooses a specific convention for a dimension with even size which we
-    # replicate here.
-    filter_height_offset = round(Int, filter_height/2, RoundUp)
-    filter_width_offset = round(Int, filter_width/2, RoundUp)
-    output = Array{JuMP.AffExpr}(output_size)
-
-    @nloops 4 i output begin
-        s = AffExpr()
-        @nloops 4 j filter begin
-            if i_4 == j_4
-                x = i_2 + j_1 - filter_height_offset
-                y = i_3 + j_2 - filter_width_offset
-                if x > 0 && y > 0 && x<=in_height && y<=in_width
-                    append!(s, filter[j_1, j_2, j_3, j_4] * input[i_1, x, y, j_3])
-                end
-            end
-        end
-        (@nref 4 output i) = s
-    end
-
-    return output
+function increment!{S<:Real, T<:Real, U<:Real}(s::S, input_val::T, filter_val::U)
+    return s + input_val*filter_val
 end
 
-"""
-Same as `conv2d` above, but optimized for JuMP variables.
-"""
-function conv2d{T<:JuMP.Variable, U<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})
-    (batch, in_height, in_width, input_in_channels) = size(input)
-    (filter_height, filter_width, filter_in_channels, out_channels) = size(filter)
-    output_size = getconv2doutputsize(input, filter)
-    # Considered using offset arrays here, but looks like it currently is not
-    # really supported
+function increment!{T<:JuMP.AffExpr, U<:Real}(s::JuMP.AffExpr, input_val::T, filter_val::U)
+    append!(s, input_val, filter_val)
+    return s
+end
 
-    # Calculating appropriate offsets so that center of kernel is matched with
-    # cell at which correlation is being calculated. Note that tensorflow
-    # chooses a specific convention for a dimension with even size which we
-    # replicate here.
-    filter_height_offset = round(Int, filter_height/2, RoundUp)
-    filter_width_offset = round(Int, filter_width/2, RoundUp)
-    output = Array{JuMP.AffExpr}(output_size)
-
-    @nloops 4 i output begin
-        s = AffExpr()
-        @nloops 4 j filter begin
-            if i_4 == j_4
-                x = i_2 + j_1 - filter_height_offset
-                y = i_3 + j_2 - filter_width_offset
-                if x > 0 && y > 0 && x<=in_height && y<=in_width
-                    new_coeff = Float64(filter[j_1, j_2, j_3, j_4])
-                    new_var = input[i_1, x, y, j_3]
-                    push!(s, new_coeff, new_var)
-                end
-            end
-        end
-        (@nref 4 output i) = s
-    end
-
-    return output
+function increment!{T<:JuMP.Variable, U<:Real}(s::JuMP.AffExpr, input_val::T, filter_val::U)
+    push!(s, Float64(filter_val), input_val)
 end
 
 """
@@ -160,15 +110,15 @@ function maxpool{T<:Real, N}(input::AbstractArray{T, N}, strides::NTuple{N, Int}
     return poolmap(maximum, input, strides)
 end
 
-function convlayer{T, U}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, strides::NTuple{4, Int})
-    return maxpool(relu(conv2d(input, filter)), strides)
+function convlayer{T, U<:Real, V<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1}, strides::NTuple{4, Int})
+    return maxpool(relu(conv2d(input, filter, bias)), strides)
 end
 
 # TODO: make type annotations more specific for all added code in this commit
 
-function fullyconnectedlayer{T, U}(input::AbstractArray{T, 1}, weights::AbstractArray{U, 2})
+function fullyconnectedlayer{T<:Real, U<:Real, V<:Real}(input::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1})
     # return weights*input
-    return relu(weights*input)
+    return relu(weights*input + bias)
 end
 
 """
@@ -228,12 +178,12 @@ end
 Imposes a 2d convolution constraint between `x` and `x_conv` as determined by
 the filters.
 """
-function conv2dconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4})::Array{JuMP.Variable, 4}
+function conv2dconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1})::Array{JuMP.Variable, 4}
     output_size = getconv2doutputsize(x, filter)
     # TODO: @robin How to take care of this pattern of reshaping a variable
     # while passing kwargs?
     x_conv = reshape(@variable(model, [1:prod(output_size)]), output_size)
-    @constraint(model, conv2d(x, filter) .== x_conv)
+    @constraint(model, conv2d(x, filter, bias) .== x_conv)
     return x_conv
 end
 
@@ -298,48 +248,48 @@ function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::Abs
     return x_pooled
 end
 
-function convlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, strides::Tuple{Integer, Integer}, M::Real)::Array{JuMP.Variable, 4}
-    x_conv = conv2dconstraint(model, x, filter)
+function convlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1}, strides::Tuple{Integer, Integer}, M::Real)::Array{JuMP.Variable, 4}
+    x_conv = conv2dconstraint(model, x, filter, bias)
     x_maxpool = maxpoolconstraint(model, x_conv, strides, M)
     x_relu = reluconstraint(model, x_maxpool, M)
     return x_relu
 end
 
-function convlayer{T<:Real, U<:Real}(x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, strides::Tuple{Integer, Integer})::Array{Real, 4}
-    x_conv = conv2d(x, filter)
+function convlayer{T<:Real, U<:Real, V<:Real}(x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1}, strides::Tuple{Integer, Integer})::Array{Real, 4}
+    x_conv = conv2d(x, filter, bias)
     x_maxpool = maxpool(x_conv, (1, strides[1], strides[2], 1))
     x_relu = relu(x_maxpool)
     return x_relu
 end
 
 
-function matmulconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2})::Array{JuMP.Variable, 1}
+function matmulconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1})::Array{JuMP.Variable, 1}
     # TODO: error checking
     (in_height, in_width) = size(weights)
     x_matmul = @variable(model, [1:in_height])
-    @constraint(model, x_matmul .== weights*x)
+    @constraint(model, x_matmul .== weights*x + bias)
     return x_matmul
 end
 
-function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, M::Real)::Array{JuMP.Variable, 1}
-    return reluconstraint(model, matmulconstraint(model, x, weights), M)
+function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1}, M::Real)::Array{JuMP.Variable, 1}
+    return reluconstraint(model, matmulconstraint(model, x, weights, bias), M)
 end
 
-function fullyconnectedlayer{T<:Real, U<:Real}(x::AbstractArray{T, 1}, weights::AbstractArray{U, 2})
-    return NNOps.relu(weights*x)
+function fullyconnectedlayer{T<:Real, U<:Real, V<:Real}(x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1})
+    return NNOps.relu(weights*x + bias)
 end
 
 # TODO: refactor fully connected layer to make non-linearity constraint optional
 # TODO: refactor softmax to apply on single variable
 
-function softmaxconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, target_index::Integer)
+function softmaxconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1}, target_index::Integer)
     # TODO: error checking on target index
-    x_matmul = matmulconstraint(model, x, weights)
+    x_matmul = matmulconstraint(model, x, weights, bias)
     @constraint(model, x_matmul - x_matmul[target_index].<= 0)
 end
 
-function softmaxindex{T<:Real, U<:Real}(x::AbstractArray{T, 1}, weights::AbstractArray{U, 2})
-    return findmax(weights*x)[2]
+function softmaxindex{T<:Real, U<:Real, V<:Real}(x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1})
+    return findmax(weights*x + bias)[2]
 end
 
 end
