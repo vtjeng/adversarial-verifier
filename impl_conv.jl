@@ -35,13 +35,14 @@ srand(5)
 
 # We select a random filter for the convolution.
 filter = rand(-10:10, filter_height, filter_width, in_channels, out_channels)
+bias = rand(-10:10, out_channels)
 
 # We select some random input, and determine the activations at each layer
 # for that input.
 # `x_conv_relu_maxpool_actual` is the target output that we will seek to
 # achieve by perturbing `x_input`.
 x0 = rand(-10:10, batch, in_height, in_width, in_channels)
-x1 = NNOps.convlayer(x0, filter, (2, 2))
+x1 = NNOps.convlayer(x0, filter, bias, (2, 2))
 
 x_input = rand(-10:10, batch, in_height, in_width, in_channels)
 
@@ -59,7 +60,7 @@ m = Model(solver=GurobiSolver())
 @variable(m, vx0[1:batch, 1:in_height, 1:in_width, 1:in_channels])
 @constraint(m, vx0 .== x_input + ve)
 
-vx1 = NNOps.convlayerconstraint(m, vx0, filter, (2, 2), bigM)
+vx1 = NNOps.convlayerconstraint(m, vx0, filter, bias, (2, 2), bigM)
 @constraint(m, vx1 .== x1);
 
 status = solve(m)
