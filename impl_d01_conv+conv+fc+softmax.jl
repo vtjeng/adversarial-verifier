@@ -51,9 +51,10 @@ if randomize
     B = rand(-10:10, B_height, B_width)
     biasB = rand(-10:10, B_height)
 else
-    vars = matread("data/2017-09-26_144005_703000.mat")
+    vars = matread("data/2017-09-28_130157-cleverhans.mat")
     mnist_test_data_resized = matread("data/mnist_test_data_resized.mat")
-    test_index = 1 # which test sample we're choosing
+    x_adv = matread("data/2017-09-28_130157-cleverhans-adversarial.mat")["adv_x"]
+    test_index = 2 # which test sample we're choosing
     y_ = mnist_test_data_resized["y_"]
     x_resize = mnist_test_data_resized["x_resize"]
     actual_label = get_label(y_, test_index)
@@ -65,8 +66,8 @@ else
     bias2 = squeeze(vars["conv2/bias"], 1)
     A = transpose(vars["fc1/weight"])
     biasA = squeeze(vars["fc1/bias"], 1)
-    B = transpose(vars["fc2/weight"])
-    biasB = squeeze(vars["fc2/bias"], 1)
+    B = transpose(vars["logits/weight"])
+    biasB = squeeze(vars["logits/bias"], 1)
 
     check_size(x0, (batch, in1_height, in1_width, in1_channels))
     check_size(filter1, (filter1_height, filter1_width, in1_channels, out1_channels))
@@ -87,17 +88,48 @@ else
         return predicted_label
     end
 
-    num_samples = 20
+    num_samples = 100
     num_correct = 0
+
+    target_label = -1 # TODO: fix
+    min_dist = Inf
+    target_sample_index = -1 # TODO: fix
+
+    test_predicted_label = calculate_predicted_label(x0)
+    adversarial_image = NNOps.avgpool(get_input(x_adv, test_index), (1, 2, 2, 1))
+    adversarial_predicted_label = calculate_predicted_label(adversarial_image)
+    println("FGSM adversarial image predicted label by NN is $adversarial_predicted_label, original image predicted label by NN is $test_predicted_label.")
     for i = 1:num_samples
-        pred = calculate_predicted_label(get_input(x_resize, i))
-        actual = get_label(y_, i)
-        println("Running test case $i. Predicted is $pred, actual is $actual.")
-        if pred == actual
+        sample_image = get_input(x_resize, i)
+        sample_predicted_label = calculate_predicted_label(sample_image)
+        sample_actual_label = get_label(y_, i)
+        # println("Running test case $i. Predicted is $pred, actual is $actual.")
+        if sample_predicted_label == sample_actual_label
             num_correct += 1
         end
+        sample_dist = sum((sample_image-x0).^2)
+        if (sample_predicted_label != test_predicted_label) && (sample_dist < min_dist)
+            target_label = sample_predicted_label
+            min_dist = sample_dist
+            target_sample_index = i
+            println("New minimum distance, $min_dist at target sample index $target_sample_index.")
+        end
     end
-    println("Number correct is $num_correct out of $num_samples.")
+    candidate_adversarial_example = get_input(x_resize, target_sample_index)
+
+    adversarial_dist = sum((adversarial_image-x0).^2)
+    if (adversarial_predicted_label!=test_predicted_label) && (adversarial_dist < min_dist)
+        target_label = adversarial_predicted_label
+        min_dist = adversarial_dist
+        candidate_adversarial_example = adversarial_image
+        println("Using adversarial example at new minimum distance, $adversarial_dist.")
+    end
+    println("Number correct on regular samples is $num_correct out of $num_samples.")
+
+
+
+
+
 end
 
 ## Calculate intermediate values
@@ -106,17 +138,17 @@ x2 = NNOps.convlayer(x1, filter2, bias2, (stride2_height, stride2_width))
 x3 = NNOps.fullyconnectedlayer(permutedims(x2, [4, 3, 2, 1])[:], A, biasA)
 predicted_label = NNOps.softmaxindex(x3, B, biasB)
 
-m = Model(solver=GurobiSolver())
+m = Model(solver=GurobiSolver(MIPFocus = 3))
 
 @variable(m, ve[1:batch, 1:in1_height, 1:in1_width, 1:in1_channels])
-@variable(m, vx0[1:batch, 1:in1_height, 1:in1_width, 1:in1_channels])
+@variable(m, 0 <= vx0[1:batch, 1:in1_height, 1:in1_width, 1:in1_channels] <= 1)
 @constraint(m, vx0 .== x0 + ve) # input
 
-vx1 = NNOps.convlayerconstraint(m, vx0, filter1, bias1, (stride1_height, stride1_width), 10000)
-vx2 = NNOps.convlayerconstraint(m, vx1, filter2, bias2, (stride2_height, stride2_width), 10000)
-vx3 = NNOps.fullyconnectedlayerconstraint(m, permutedims(vx2, [4, 3, 2, 1])[:], A, biasA, 10000)
-target_label = 3
-setvalue(ve, get_input(x_resize, 2))
+vx1 = NNOps.convlayerconstraint(m, vx0, filter1, bias1, (stride1_height, stride1_width), 10)
+vx2 = NNOps.convlayerconstraint(m, vx1, filter2, bias2, (stride2_height, stride2_width), 10)
+vx3 = NNOps.fullyconnectedlayerconstraint(m, permutedims(vx2, [4, 3, 2, 1])[:], A, biasA, 30)
+# target_label = 3
+setvalue(ve, candidate_adversarial_example - x0)
 NNOps.softmaxconstraint(m, vx3, B, biasB, target_label)
 
 @objective(m, Min, sum(ve.^2))
