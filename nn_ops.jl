@@ -110,6 +110,10 @@ function maxpool{T<:Real, N}(input::AbstractArray{T, N}, strides::NTuple{N, Int}
     return poolmap(maximum, input, strides)
 end
 
+function avgpool{T<:Real, N}(input::AbstractArray{T, N}, strides::NTuple{N, Int})::AbstractArray{T, N}
+    return poolmap(mean, input, strides)
+end
+
 function convlayer{T, U<:Real, V<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1}, strides::NTuple{4, Int})
     return maxpool(relu(conv2d(input, filter, bias)), strides)
 end
@@ -286,6 +290,16 @@ function softmaxconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::
     # TODO: error checking on target index
     x_matmul = matmulconstraint(model, x, weights, bias)
     @constraint(model, x_matmul - x_matmul[target_index].<= 0)
+end
+
+function softmaxconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1}, target_index::Integer, tol::Float64)
+    # TODO: error checking on target index
+    x_matmul = matmulconstraint(model, x, weights, bias)
+    for i in 1:size(x_matmul)[1]
+        if (i != target_index)
+            @constraint(model, x_matmul[i] - x_matmul[target_index]<= tol)
+        end
+    end
 end
 
 function softmaxindex{T<:Real, U<:Real, V<:Real}(x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1})
