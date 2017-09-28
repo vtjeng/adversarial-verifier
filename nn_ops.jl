@@ -306,4 +306,10 @@ function softmaxindex{T<:Real, U<:Real, V<:Real}(x::AbstractArray{T, 1}, weights
     return findmax(weights*x + bias)[2]
 end
 
+function flatten{T}(x::AbstractArray{T, 4})
+    # need to permute dimensions because Python flattens arrays in the opposite
+    # order
+    return permutedims(x, [4, 3, 2, 1])[:]
+end
+
 end

@@ -8,11 +8,23 @@ We ensure that the output constraint is achievable by passing in some input
 through the neural net.
 
 Conventions:
-  + x0: Array{Real} input corresponding to the output we are attempting to achieve (a.k.a "target input")
+  + x0: Array{Real} input corresponding to the output we are attempting to
+    achieve (a.k.a "target input")
   + x_input: Array{Real} input that we are perturbing
   + xk: Array{Real} activation at kth layer of neural net to target input
-  + vx0: Array{AbstractJuMPScalar} perturbed input to neural net (a.k.a. "perturbed input")
+  + vx0: Array{AbstractJuMPScalar} perturbed input to neural net
+    (a.k.a. "perturbed input")
   + vxk: Array{AbstractJuMPScalar} activation at kth layer to perturbed input
+"""
+
+"""
+Run results, caa 28-Sep-2017
+
+       Nodes    |    Current Node    |     Objective Bounds      |     Work
+    Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+...
+1322296 1185215    9.27050   87  142   13.33679    6.36911  52.2%  10.8  630s
+...
 """
 
 # We specify the parameters for the size of the problem that we are solving.

@@ -4,6 +4,32 @@ using Gurobi
 include("nn_ops.jl")
 include("util.jl")
 
+"""
+Attempting to find adversarial example. Neural net predicted label is 1, target label is 2
+Optimize a model with 1150 rows, 818 columns and 3469 nonzeros
+Model has 64 quadratic objective terms
+Variable types: 525 continuous, 293 integer (293 binary)
+...
+Presolve removed 414 rows and 241 columns
+Presolve time: 0.01s
+Presolved: 736 rows, 577 columns, 3168 nonzeros
+Presolved model has 64 quadratic objective terms
+Variable types: 354 continuous, 223 integer (223 binary)
+Presolve removed 93 rows and 93 columns
+Presolved: 643 rows, 484 columns, 2889 nonzeros
+Presolved model has 64 quadratic objective terms
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+...
+     0     2    0.00000    0   98    7.43427    0.00000   100%     -    0s
+...
+ 13061  9366    0.36796   51   89    0.58402    0.00101   100%  38.7   20s
+...
+124296 84436    0.08787   77   83    0.57558    0.08108  85.9%  47.9  201s 
+"""
+
 ### Parameters for neural net
 batch = 1
 in1_height = 8
