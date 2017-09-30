@@ -15,9 +15,7 @@ Conventions:
   + vx0: Array{AbstractJuMPScalar} perturbed input to neural net
     (a.k.a. "perturbed input")
   + vxk: Array{AbstractJuMPScalar} activation at kth layer to perturbed input
-"""
 
-"""
 Run results, caa 28-Sep-2017
 
        Nodes    |    Current Node    |     Objective Bounds      |     Work
@@ -70,7 +68,7 @@ m = Model(solver=GurobiSolver(MIPFocus = 3))
 # perturbations.
 @variable(m, ve[1:batch, 1:in_height, 1:in_width, 1:in_channels])
 @objective(m, Min, sum(ve.^2))
-@variable(m, vx0[1:batch, 1:in_height, 1:in_width, 1:in_channels])
+@variable(m, 0 <= vx0[1:batch, 1:in_height, 1:in_width, 1:in_channels] <= 1)
 @constraint(m, vx0 .== x_input + ve)
 setvalue(ve, x0 - x_input)
 
