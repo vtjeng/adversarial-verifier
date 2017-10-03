@@ -181,13 +181,10 @@ function conv2dconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::J
     # TODO: @robin How to take care of this pattern of reshaping a variable
     # while passing kwargs?
     x_conv = reshape(@variable(model, [1:prod(output_size)]), output_size)
-    aff_ex = conv2d(x, filter, bias)
-    # TODO: change to explicit equality function
-    for (x, a) in zip(x_conv, aff_ex)
-        setlowerbound(x, lowerbound(a))
-        setupperbound(x, upperbound(a))
-    end
-    @constraint(model, aff_ex .== x_conv)
+    constrain_with_bounds(
+        model,
+        x_conv,
+        conv2d(x, filter, bias))
     return x_conv
 
     # return conv2d(x, filter, bias)
@@ -203,23 +200,36 @@ Note that `x` and `x_rect` must be arrays of the same size.
 
 """
 function reluconstraint{T<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, x::AbstractArray{T, N}, M::Real)::Array{JuMP.Variable, N}
+    ### v1 - using conditional jump
+    x_rect_raw = []
+
+    @nloops 4 i x begin
+        push!(x_rect_raw, reluconstraint_return(model, (@nref 4 x i)))
+    end
+
+    x_rect = reshape(x_rect_raw, size(x))
+    return x_rect
+
+    ### v2 - using original big-M formulation
+    # x_rect = reshape(@variable(model, [1:length(x)]), size(x))
+    #
+    # a = reshape(@variable(model, [1:length(x)], category = :Bin), size(x))
+    #
+    # @constraint(model, x_rect .<= x + M*(1-a))
+    # @constraint(model, x_rect .>= x)
+    # @constraint(model, x_rect .<= M*a)
+    # @constraint(model, x_rect .>= 0)
+    # return x_rect
+
+    ### v3 - using conditional jump
     # x_rect_raw = []
     #
     # @nloops 4 i x begin
-    #     push!(x_rect_raw, reluconstraint_return(model, (@nref 4 x i)))
+    #     push!(x_rect_raw, reluconstraint_vincent(model, (@nref 4 x i)))
     # end
     #
     # x_rect = reshape(x_rect_raw, size(x))
-
-    x_rect = reshape(@variable(model, [1:length(x)]), size(x))
-
-    a = reshape(@variable(model, [1:length(x)], category = :Bin), size(x))
-
-    @constraint(model, x_rect .<= x + M*(1-a))
-    @constraint(model, x_rect .>= x)
-    @constraint(model, x_rect .<= M*a)
-    @constraint(model, x_rect .>= 0)
-    return x_rect
+    # return x_rect
 end
 
 function reluconstraint_return{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)
@@ -227,6 +237,28 @@ function reluconstraint_return{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x:
         (x <= 0) => 0,
         (x >= 0) => x
     )
+    setlowerbound(x_rect, 0) # we're smart, so we strengthen the lowerbound.
+    # we expect the upperbound to be taken care of.
+    return x_rect
+end
+
+function reluconstraint_vincent{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)
+    M = upperbound(x)*10
+    # println(M)
+
+    # @variable(model, a, category = :Bin)
+    # @variable(model, x_rect)
+
+    a = @variable(model, category = :Bin)
+    x_rect = @variable(model)
+
+    @constraint(model, x_rect <= x + M*(1-a))
+    @constraint(model, x_rect >= x)
+    @constraint(model, x_rect <= M*a)
+    @constraint(model, x_rect >= 0)
+
+    setlowerbound(x_rect, 0) # we're smart, so we strengthen the lowerbound.
+    setupperbound(x_rect, M)
     return x_rect
 end
 
@@ -246,31 +278,6 @@ Note that `x` and `x_pooled` must have sizes that match according to `strides`.
 
 TODO: finish up documentation
 """
-# function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::AbstractArray{T, 4}, strides::Tuple{Integer, Integer}, M::Real)::Array{JuMP.Variable, 4}
-#     (pool_height, pool_width) = strides
-#     full_strides = (1, pool_height, pool_width, 1)
-#
-#     x_pooled_size = getoutputsize(x, full_strides)
-#     x_pooled = reshape(@variable(model, [1:prod(x_pooled_size)]), x_pooled_size)
-#
-#     a = reshape(@variable(model, [1:length(x)], category = :Bin), size(x))
-#
-#     @nloops 4 r x_pooled begin
-#         a_sum = 0
-#         x_pooled_cur = (@nref 4 x_pooled r)
-#         getcurpoolview = (input_array) -> getpoolview(input_array, full_strides, @ntuple 4 r)
-#
-#         for e in zip(getcurpoolview(a), getcurpoolview(x))
-#             (a_cur, x_cur) = e
-#             @constraint(model, x_pooled_cur <= x_cur + M*(1-a_cur))
-#             @constraint(model, x_pooled_cur >= x_cur)
-#         end
-#
-#         @constraint(model, sum(getcurpoolview(a)) == 1)
-#     end
-#     return x_pooled
-# end
-
 function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::AbstractArray{T, 4}, strides::Tuple{Integer, Integer}, M::Real)::Array{JuMP.Variable, 4}
     return poolmap((a) -> fat_maximum(model, a), x, (1, strides[1], strides[2], 1))
 end
@@ -284,8 +291,8 @@ function my_maximum{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractA
     x_max = @variable(model,
         lowerbound = Base.maximum(map(getlowerbound, xs)),
         upperbound = Base.maximum(map(getupperbound, xs)))
-    println(getupperbound(x_max))
-    println(getlowerbound(x_max))
+    # println(getupperbound(x_max))
+    # println(getlowerbound(x_max))
     indicators = []
     for x in xs
         a = @variable(model, category =:Bin)
@@ -315,8 +322,18 @@ function matmulconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::J
     # TODO: error checking
     (in_height, in_width) = size(weights)
     x_matmul = @variable(model, [1:in_height])
-    @constraint(model, x_matmul .== weights*x + bias)
+    aff_ex = weights*x .+ bias
+    constrain_with_bounds(model, x_matmul, aff_ex)
     return x_matmul
+end
+
+function constrain_with_bounds{T<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, lhs::Array{JuMP.Variable, N}, rhs::Array{T, N})
+    assert(size(lhs) == size(rhs)) # TODO: better error message
+    for (x, y) in zip(lhs, rhs)
+        setlowerbound(x, lowerbound(y))
+        setupperbound(x, upperbound(y))
+    end
+    @constraint(model, rhs .== lhs)
 end
 
 function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1}, M::Real)::Array{JuMP.Variable, 1}
