@@ -108,7 +108,7 @@ Computes the result of a max-pooling operation on `input_array` with specified
 function maxpool{T<:Real, N}(input::AbstractArray{T, N}, strides::NTuple{N, Int})::AbstractArray{T, N}
     # NB: Tried to use pooling function from Knet.relu but it had way too many
     # incompatibilities
-    return poolmap(maximum, input, strides)
+    return poolmap(Base.maximum, input, strides)
 end
 
 function avgpool{T<:Real, N}(input::AbstractArray{T, N}, strides::NTuple{N, Int})::AbstractArray{T, N}
@@ -199,40 +199,11 @@ For `|x| < M`, `x_rect` = `x` if `x` > 0 and 0 otherwise.
 Note that `x` and `x_rect` must be arrays of the same size.
 
 """
-function reluconstraint{T<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, x::AbstractArray{T, N}, M::Real)::Array{JuMP.Variable, N}
-    ### v1 - using conditional jump
-    x_rect_raw = []
-
-    @nloops 4 i x begin
-        push!(x_rect_raw, reluconstraint_return(model, (@nref 4 x i)))
-    end
-
-    x_rect = reshape(x_rect_raw, size(x))
-    return x_rect
-
-    ### v2 - using original big-M formulation
-    # x_rect = reshape(@variable(model, [1:length(x)]), size(x))
-    #
-    # a = reshape(@variable(model, [1:length(x)], category = :Bin), size(x))
-    #
-    # @constraint(model, x_rect .<= x + M*(1-a))
-    # @constraint(model, x_rect .>= x)
-    # @constraint(model, x_rect .<= M*a)
-    # @constraint(model, x_rect .>= 0)
-    # return x_rect
-
-    ### v3 - using conditional jump
-    # x_rect_raw = []
-    #
-    # @nloops 4 i x begin
-    #     push!(x_rect_raw, reluconstraint_vincent(model, (@nref 4 x i)))
-    # end
-    #
-    # x_rect = reshape(x_rect_raw, size(x))
-    # return x_rect
+function reluconstraint{T<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, xs::AbstractArray{T, N}, M::Real)::Array{JuMP.Variable, N}
+    return map(x -> reluconstraint(model, x), xs)
 end
 
-function reluconstraint_return{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)
+function reluconstraint_cj{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::JuMP.Variable
     x_rect = @switch(
         (x <= 0) => 0,
         (x >= 0) => x
@@ -242,23 +213,27 @@ function reluconstraint_return{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x:
     return x_rect
 end
 
-function reluconstraint_vincent{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)
-    M = upperbound(x)*10
-    # println(M)
-
-    # @variable(model, a, category = :Bin)
-    # @variable(model, x_rect)
-
-    a = @variable(model, category = :Bin)
+function reluconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::JuMP.Variable
     x_rect = @variable(model)
 
-    @constraint(model, x_rect <= x + M*(1-a))
-    @constraint(model, x_rect >= x)
-    @constraint(model, x_rect <= M*a)
-    @constraint(model, x_rect >= 0)
+    if upperbound(x) < 0
+        @constraint(model, x_rect == 0)
+    else
+        # Set big-M to be the maximum of the absolute value of x.
+        M = max(upperbound(x), -lowerbound(x))
 
-    setlowerbound(x_rect, 0) # we're smart, so we strengthen the lowerbound.
-    setupperbound(x_rect, M)
+        a = @variable(model, category = :Bin)
+
+        @constraint(model, x_rect <= x + M*(1-a))
+        @constraint(model, x_rect >= x)
+        @constraint(model, x_rect <= M*a)
+        @constraint(model, x_rect >= 0)
+
+        # Manually set the bounds for x_rect so they can be used by downstream operations.
+        setlowerbound(x_rect, 0)
+        setupperbound(x_rect, M)
+    end
+
     return x_rect
 end
 
@@ -278,16 +253,15 @@ Note that `x` and `x_pooled` must have sizes that match according to `strides`.
 
 TODO: finish up documentation
 """
-function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::AbstractArray{T, 4}, strides::Tuple{Integer, Integer}, M::Real)::Array{JuMP.Variable, 4}
-    return poolmap((a) -> fat_maximum(model, a), x, (1, strides[1], strides[2], 1))
+function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 4}, strides::Tuple{Integer, Integer}, M::Real)::Array{JuMP.Variable, 4}
+    return poolmap(
+        (x) -> NNOps.maximum(model, x[:]),
+        xs,
+        (1, strides[1], strides[2], 1)
+    )
 end
 
-function fat_maximum{T<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, xs::AbstractArray{T, N})
-    return my_maximum(model, xs[:])
-end
-
-
-function my_maximum{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 1})
+function maximum{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 1})
     x_max = @variable(model,
         lowerbound = Base.maximum(map(getlowerbound, xs)),
         upperbound = Base.maximum(map(getupperbound, xs)))
@@ -296,7 +270,11 @@ function my_maximum{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractA
     indicators = []
     for x in xs
         a = @variable(model, category =:Bin)
-        @implies(model, (a == 1) => (x_max == x), (a==0) => (x_max >= x))
+        # @implies(model,
+        #     (a == 1) => (x_max == x),
+        #     (a == 0) => (x_max >= x))
+        @implies(model, a, x_max == x)
+        @implies(model, 1 - a, x_max >= x)
         push!(indicators, a)
     end
     @constraint(model, sum(indicators) == 1)
