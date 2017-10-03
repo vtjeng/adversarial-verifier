@@ -177,17 +177,7 @@ Imposes a 2d convolution constraint between `x` and `x_conv` as determined by
 the filters.
 """
 function conv2dconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1})
-    output_size = getconv2doutputsize(x, filter)
-    # TODO: @robin How to take care of this pattern of reshaping a variable
-    # while passing kwargs?
-    x_conv = reshape(@variable(model, [1:prod(output_size)]), output_size)
-    constrain_with_bounds(
-        model,
-        x_conv,
-        conv2d(x, filter, bias))
-    return x_conv
-
-    # return conv2d(x, filter, bias)
+    return conv2d(x, filter, bias)
 end
 
 """
@@ -199,7 +189,7 @@ For `|x| < M`, `x_rect` = `x` if `x` > 0 and 0 otherwise.
 Note that `x` and `x_rect` must be arrays of the same size.
 
 """
-function reluconstraint{T<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, xs::AbstractArray{T, N}, M::Real)::Array{JuMP.Variable, N}
+function reluconstraint{T<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, xs::AbstractArray{T, N})::Array{JuMP.Variable, N}
     return map(x -> reluconstraint(model, x), xs)
 end
 
@@ -218,6 +208,8 @@ function reluconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::Ju
 
     if upperbound(x) < 0
         @constraint(model, x_rect == 0)
+        setlowerbound(x_rect, 0)
+        setupperbound(x_rect, 0)
     else
         # Set big-M to be the maximum of the absolute value of x.
         M = max(upperbound(x), -lowerbound(x))
@@ -253,7 +245,7 @@ Note that `x` and `x_pooled` must have sizes that match according to `strides`.
 
 TODO: finish up documentation
 """
-function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 4}, strides::Tuple{Integer, Integer}, M::Real)::Array{JuMP.Variable, 4}
+function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 4}, strides::Tuple{Integer, Integer})::Array{JuMP.Variable, 4}
     return poolmap(
         (x) -> NNOps.maximum(model, x[:]),
         xs,
@@ -262,17 +254,21 @@ function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::Ab
 end
 
 function maximum{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 1})
+    if (Base.maximum(map(upperbound, xs)) == Inf)
+        println(xs)
+        println(map(upperbound, xs))
+        for (a, b) in linearterms(xs[1])
+            println(a)
+            println(upperbound(b))
+            println(" ")
+        end
+    end
     x_max = @variable(model,
-        lowerbound = Base.maximum(map(getlowerbound, xs)),
-        upperbound = Base.maximum(map(getupperbound, xs)))
-    # println(getupperbound(x_max))
-    # println(getlowerbound(x_max))
+        lowerbound = Base.maximum(map(lowerbound, xs)),
+        upperbound = Base.maximum(map(upperbound, xs)))
     indicators = []
     for x in xs
         a = @variable(model, category =:Bin)
-        # @implies(model,
-        #     (a == 1) => (x_max == x),
-        #     (a == 0) => (x_max >= x))
         @implies(model, a, x_max == x)
         @implies(model, 1 - a, x_max >= x)
         push!(indicators, a)
@@ -281,10 +277,10 @@ function maximum{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArra
     return x_max
 end
 
-function convlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1}, strides::Tuple{Integer, Integer}, M::Real)::Array{JuMP.Variable, 4}
+function convlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1}, strides::Tuple{Integer, Integer})::Array{JuMP.Variable, 4}
     x_conv = conv2dconstraint(model, x, filter, bias)
-    x_maxpool = maxpoolconstraint(model, x_conv, strides, M)
-    x_relu = reluconstraint(model, x_maxpool, M)
+    x_maxpool = maxpoolconstraint(model, x_conv, strides)
+    x_relu = reluconstraint(model, x_maxpool)
     return x_relu
 end
 
@@ -296,26 +292,12 @@ function convlayer{T<:Real, U<:Real, V<:Real}(x::AbstractArray{T, 4}, filter::Ab
 end
 
 
-function matmulconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1})::Array{JuMP.Variable, 1}
-    # TODO: error checking
-    (in_height, in_width) = size(weights)
-    x_matmul = @variable(model, [1:in_height])
-    aff_ex = weights*x .+ bias
-    constrain_with_bounds(model, x_matmul, aff_ex)
-    return x_matmul
+function matmulconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1})
+    return weights*x .+ bias
 end
 
-function constrain_with_bounds{T<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, lhs::Array{JuMP.Variable, N}, rhs::Array{T, N})
-    assert(size(lhs) == size(rhs)) # TODO: better error message
-    for (x, y) in zip(lhs, rhs)
-        setlowerbound(x, lowerbound(y))
-        setupperbound(x, upperbound(y))
-    end
-    @constraint(model, rhs .== lhs)
-end
-
-function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1}, M::Real)::Array{JuMP.Variable, 1}
-    return reluconstraint(model, matmulconstraint(model, x, weights, bias), M)
+function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1})::Array{JuMP.Variable, 1}
+    return reluconstraint(model, matmulconstraint(model, x, weights, bias))
 end
 
 function fullyconnectedlayer{T<:Real, U<:Real, V<:Real}(x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1})
@@ -345,10 +327,11 @@ function softmaxindex{T<:Real, U<:Real, V<:Real}(x::AbstractArray{T, 1}, weights
     return findmax(weights*x + bias)[2]
 end
 
-function flatten{T}(x::AbstractArray{T, 4})
-    # need to permute dimensions because Python flattens arrays in the opposite
-    # order
-    return permutedims(x, [4, 3, 2, 1])[:]
+"""
+Permute dimensions of array because Python flattens arrays in the opposite order.
+"""
+function flatten{T, N}(x::AbstractArray{T, N})
+    return permutedims(x, N:-1:1)[:]
 end
 
 end
