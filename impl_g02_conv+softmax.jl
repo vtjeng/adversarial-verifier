@@ -72,7 +72,7 @@ m = Model(solver=GurobiSolver(MIPFocus = 3))
 @variable(m, 0 <= vx0[1:batch, 1:in1_height, 1:in1_width, 1:in1_channels] <= 1)
 @constraint(m, vx0 .== x0 + ve) # input
 
-vx1 = NNOps.convlayerconstraint(m, vx0, filter1, bias1, (stride1_height, stride1_width), 10000)
+vx1 = NNOps.convlayerconstraint(m, vx0, filter1, bias1, (stride1_height, stride1_width))
 vx2 = NNOps.flatten(vx1)
 
 target_label = 3

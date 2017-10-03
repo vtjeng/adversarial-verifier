@@ -82,7 +82,7 @@ e =
 
 [0.00201245 0.0929548 -0.00578713 -0.0466437 0.0023881 0.0304695 -0.0651105 0.0]
 
-[-0.00636915 0.000373439 0.0 0.147622 -0.00865542 -0.0721574 0.00423076 0.0] 
+[-0.00636915 0.000373439 0.0 0.147622 -0.00865542 -0.0721574 0.00423076 0.0]
 """
 
 ### Parameters for neural net
@@ -131,7 +131,7 @@ biasB = rand(B_height)*2-1
 ## Calculate intermediate values
 x1 = NNOps.convlayer(x0, filter1, bias1, (stride1_height, stride1_width))
 x2 = NNOps.convlayer(x1, filter2, bias2, (stride2_height, stride2_width))
-x3 = NNOps.fullyconnectedlayer(permutedims(x2, [4, 3, 2, 1])[:], A, biasA)
+x3 = NNOps.fullyconnectedlayer(NNOps.flatten(x2), A, biasA)
 predicted_label = NNOps.softmaxindex(x3, B, biasB)
 
 m = Model(solver=GurobiSolver(MIPFocus = 3))
@@ -140,9 +140,9 @@ m = Model(solver=GurobiSolver(MIPFocus = 3))
 @variable(m, 0 <= vx0[1:batch, 1:in1_height, 1:in1_width, 1:in1_channels] <= 1)
 @constraint(m, vx0 .== x0 + ve) # input
 
-vx1 = NNOps.convlayerconstraint(m, vx0, filter1, bias1, (stride1_height, stride1_width), 10)
-vx2 = NNOps.convlayerconstraint(m, vx1, filter2, bias2, (stride2_height, stride2_width), 10)
-vx3 = NNOps.fullyconnectedlayerconstraint(m, permutedims(vx2, [4, 3, 2, 1])[:], A, biasA, 30)
+vx1 = NNOps.convlayerconstraint(m, vx0, filter1, bias1, (stride1_height, stride1_width))
+vx2 = NNOps.convlayerconstraint(m, vx1, filter2, bias2, (stride2_height, stride2_width))
+vx3 = NNOps.fullyconnectedlayerconstraint(m, NNOps.flatten(vx2), A, biasA)
 target_label = 2
 NNOps.softmaxconstraint(m, vx3, B, biasB, target_label, -1.0)
 
