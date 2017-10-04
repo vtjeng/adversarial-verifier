@@ -2,6 +2,7 @@ using MAT
 using JuMP
 using Gurobi
 include("nn_ops.jl")
+include("nn_examples.jl")
 include("util.jl")
 
 """
@@ -583,6 +584,7 @@ in1_height = 14
 in1_width = 14
 stride1_height = 2
 stride1_width = 2
+strides1 = (1, stride1_height, stride1_width, 1)
 pooled1_height = round(Int, in1_height/stride1_height, RoundUp)
 pooled1_width = round(Int, in1_width/stride1_width, RoundUp)
 in1_channels = 1
@@ -594,6 +596,7 @@ in2_height = pooled1_height
 in2_width = pooled1_width
 stride2_height = 1
 stride2_width = 1
+strides2 = (1, stride2_height, stride2_width, 1)
 pooled2_height = round(Int, in2_height/stride2_height, RoundUp)
 pooled2_width = round(Int, in2_width/stride2_width, RoundUp)
 in2_channels = out1_channels
@@ -638,8 +641,8 @@ check_size(biasB, (B_height, ))
 
 function calculate_predicted_label{T<:Real}(
     x0_::AbstractArray{T, 4})::Int
-    x1_ = NNOps.convlayer(x0_, filter1, bias1, (stride1_height, stride1_width))
-    x2_ = NNOps.convlayer(x1_, filter2, bias2, (stride2_height, stride2_width))
+    x1_ = NNOps.convlayer(x0_, filter1, bias1, strides1)
+    x2_ = NNOps.convlayer(x1_, filter2, bias2, strides2)
     x3_ = NNOps.flatten(x2_)
     x4_ = NNOps.fullyconnectedlayer(x3_, A, biasA)
     predicted_label = NNOps.softmaxindex(x4_, B, biasB)
@@ -684,32 +687,4 @@ if (adversarial_predicted_label!=test_predicted_label) && (adversarial_dist < mi
 end
 println("Number correct on regular samples is $num_correct out of $num_samples.")
 
-## Calculate intermediate values
-x1 = NNOps.convlayer(x0, filter1, bias1, (stride1_height, stride1_width))
-x2 = NNOps.convlayer(x1, filter2, bias2, (stride2_height, stride2_width))
-x3 = NNOps.flatten(x2)
-x4 = NNOps.fullyconnectedlayer(x3, A, biasA)
-predicted_label = NNOps.softmaxindex(x4, B, biasB)
-
-m = Model(solver=GurobiSolver(MIPFocus = 3))
-
-@variable(m, ve[1:batch, 1:in1_height, 1:in1_width, 1:in1_channels])
-@variable(m, 0 <= vx0[1:batch, 1:in1_height, 1:in1_width, 1:in1_channels] <= 1)
-@constraint(m, vx0 .== x0 + ve) # input
-
-vx1 = NNOps.convlayerconstraint(m, vx0, filter1, bias1, (stride1_height, stride1_width))
-vx2 = NNOps.convlayerconstraint(m, vx1, filter2, bias2, (stride2_height, stride2_width))
-vx3 = NNOps.flatten(vx2)
-vx4 = NNOps.fullyconnectedlayerconstraint(m, vx3, A, biasA)
-
-setvalue(ve, candidate_adversarial_example - x0)
-NNOps.softmaxconstraint(m, vx4, B, biasB, target_label)
-
-@objective(m, Min, sum(ve.^2))
-
-println("Attempting to prove optimality of candidate adversarial example. Neural net predicted label is $predicted_label, target label is $target_label")
-
-solve(m)
-
-println("Objective value: ", getobjectivevalue(m))
-println("e = ", getvalue(ve))
+NNExamples.solve_conv_conv_fc_softmax(x0, filter1, bias1, strides1, filter2, bias2, strides2, A, biasA, B, biasB, target_label, 0.0, candidate_adversarial_example - x0)

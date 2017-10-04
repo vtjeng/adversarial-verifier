@@ -115,7 +115,7 @@ function avgpool{T<:Real, N}(input::AbstractArray{T, N}, strides::NTuple{N, Int}
     return poolmap(mean, input, strides)
 end
 
-function convlayer{T, U<:Real, V<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1}, strides::NTuple{4, Int})
+function convlayer{T<:Real, U<:Real, V<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1}, strides::NTuple{4, Int})
     return maxpool(relu(conv2d(input, filter, bias)), strides)
 end
 
@@ -252,12 +252,12 @@ Note that `x` and `x_pooled` must have sizes that match according to `strides`.
 
 TODO: finish up documentation
 """
-function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 4}, strides::Tuple{Integer, Integer})::Array{JuMP.Variable, 4}
+function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 4}, strides::NTuple{4, Integer})::Array{JuMP.Variable, 4}
     # TODO: Fixme change strides to a 4-tuple for consistency.
     return poolmap(
         (x) -> NNOps.maximum(model, x[:]),
         xs,
-        (1, strides[1], strides[2], 1)
+        strides
     )
 end
 
@@ -285,20 +285,12 @@ function maximum{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArra
     return x_max
 end
 
-function convlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1}, strides::Tuple{Integer, Integer})::Array{JuMP.Variable, 4}
+function convlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1}, strides::NTuple{4, Integer})::Array{JuMP.Variable, 4}
     x_conv = conv2dconstraint(model, x, filter, bias)
     x_maxpool = maxpoolconstraint(model, x_conv, strides)
     x_relu = reluconstraint(model, x_maxpool)
     return x_relu
 end
-
-function convlayer{T<:Real, U<:Real, V<:Real}(x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1}, strides::Tuple{Integer, Integer})::Array{Real, 4}
-    x_conv = conv2d(x, filter, bias)
-    x_maxpool = maxpool(x_conv, (1, strides[1], strides[2], 1))
-    x_relu = relu(x_maxpool)
-    return x_relu
-end
-
 
 function matmulconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1})
     return weights*x .+ bias
@@ -342,10 +334,6 @@ function flatten{T, N}(x::AbstractArray{T, N})
     return permutedims(x, N:-1:1)[:]
 end
 
-function abs_ge{T<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, xs::AbstractArray{T, N})::Array{JuMP.Variable}
-    return map(x -> abs_ge(model, x), xs)
-end
-
 function abs_ge{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::JuMP.Variable
     x_abs = @variable(model)
     u = upperbound(x)
@@ -365,10 +353,6 @@ function abs_ge{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::JuMP.Varia
         setupperbound(x_abs, max(-l, u))
     end
     return x_abs
-end
-
-function abs_le{T<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, xs::AbstractArray{T, N})::Array{JuMP.Variable}
-    return map(x -> abs_le(model, x), xs)
 end
 
 function abs_le{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::JuMP.Variable
@@ -412,22 +396,21 @@ function convlayer_forwardprop{T<:Real, U<:Real, V<:Real, W<:Real}(
     #     throw(ArgumentError("Number of output channels in filter, $filter_out_channels, does not match number of output channels in bias, $bias_out_channels."))
     # end
     # in_channels = input_in_channels
-    (d1, stride_height, stride_width, d2) = strides
     # if ((d1 != 1) or (d2 != 1))
     #     throw(ArgumentError("Not implemented yet."))
     # end
 
     m = Model(solver=GurobiSolver(MIPFocus = 3))
-    ve = map(i -> @variable(m), input)
-    ve_abs = NNOps.abs_ge(m, ve)
+    ve = map(_ -> @variable(m), input)
+    ve_abs = NNOps.abs_ge.(m, ve)
     @constraint(m, sum(ve_abs) <= k_in)
 
-    vx0 = map(i -> @variable(m, lowerbound = 0, upperbound = 1), input)
+    vx0 = map(_ -> @variable(m, lowerbound = 0, upperbound = 1), input)
     @constraint(m, vx0 .== input + ve)
 
-    conv_input = NNOps.convlayer(input, filter, bias, (stride_height, stride_width))
-    vx1 = NNOps.convlayerconstraint(m, vx0, filter, bias, (stride_height, stride_width))
-    dvx1_abs = NNOps.abs_le(m, vx1-conv_input)
+    conv_input = NNOps.convlayer(input, filter, bias, strides)
+    vx1 = NNOps.convlayerconstraint(m, vx0, filter, bias, strides)
+    dvx1_abs = NNOps.abs_le.(m, vx1-conv_input)
 
     @objective(m, Max, sum(dvx1_abs))
 

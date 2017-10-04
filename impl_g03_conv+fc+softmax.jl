@@ -2,7 +2,7 @@ using MAT
 using JuMP
 using Gurobi
 include("nn_ops.jl")
-include("util.jl")
+include("nn_examples.jl")
 
 """
 Nodes    |    Current Node    |     Objective Bounds      |     Work
@@ -45,6 +45,7 @@ in1_height = 8
 in1_width = 8
 stride1_height = 2
 stride1_width = 2
+strides1 = (1, stride1_height, stride1_width, 1)
 pooled1_height = round(Int, in1_height/stride1_height, RoundUp)
 pooled1_width = round(Int, in1_width/stride1_width, RoundUp)
 in1_channels = 1
@@ -64,34 +65,9 @@ x0 = rand(batch, in1_height, in1_width, in1_channels)
 
 filter1 = rand(filter1_height, filter1_width, in1_channels, out1_channels)*2-1
 bias1 = rand(out1_channels)*2-1
-A = rand(-10:10, A_height, A_width)
-biasA = rand(-10:10, A_height)
+A = rand(-10:10, A_height, A_width).+0.0
+biasA = rand(-10:10, A_height).+0.0
 B = rand(B_height, B_width)*2-1
 biasB = rand(B_height)*2-1
 
-## Calculate intermediate values
-x1 = NNOps.convlayer(x0, filter1, bias1, (stride1_height, stride1_width))
-x2 = NNOps.flatten(x1)
-x3 = NNOps.fullyconnectedlayer(x2, A, biasA)
-predicted_label = NNOps.softmaxindex(x3, B, biasB)
-
-m = Model(solver=GurobiSolver(MIPFocus = 3))
-
-@variable(m, ve[1:batch, 1:in1_height, 1:in1_width, 1:in1_channels])
-@variable(m, 0 <= vx0[1:batch, 1:in1_height, 1:in1_width, 1:in1_channels] <= 1)
-@constraint(m, vx0 .== x0 + ve) # input
-
-vx1 = NNOps.convlayerconstraint(m, vx0, filter1, bias1, (stride1_height, stride1_width))
-vx2 = NNOps.flatten(vx1)
-vx3 = NNOps.fullyconnectedlayerconstraint(m, vx2, A, biasA)
-target_label = 3
-NNOps.softmaxconstraint(m, vx3, B, biasB, target_label, -1.0)
-
-@objective(m, Min, sum(ve.^2))
-
-println("Attempting to find adversarial example. Neural net predicted label is $predicted_label, target label is $target_label")
-
-solve(m)
-
-println("Objective value: ", getobjectivevalue(m))
-println("e = ", getvalue(ve))
+NNExamples.solve_conv_fc_softmax(x0, filter1, bias1, strides1, A, biasA, B, biasB, 3, -1.0, map(_ -> 0.0, x0))

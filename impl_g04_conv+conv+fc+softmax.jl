@@ -2,7 +2,7 @@ using MAT
 using JuMP
 using Gurobi
 include("nn_ops.jl")
-include("util.jl")
+include("nn_examples.jl")
 
 """
 pre- ConditionalJuMP
@@ -91,6 +91,7 @@ in1_height = 8
 in1_width = 8
 stride1_height = 2
 stride1_width = 2
+strides1 = (1, stride1_height, stride1_width, 1)
 pooled1_height = round(Int, in1_height/stride1_height, RoundUp)
 pooled1_width = round(Int, in1_width/stride1_width, RoundUp)
 in1_channels = 1
@@ -102,6 +103,7 @@ in2_height = pooled1_height
 in2_width = pooled1_width
 stride2_height = 1
 stride2_width = 1
+strides2 = (1, stride2_height, stride2_width, 1)
 pooled2_height = round(Int, in2_height/stride2_height, RoundUp)
 pooled2_width = round(Int, in2_width/stride2_width, RoundUp)
 in2_channels = out1_channels
@@ -128,29 +130,4 @@ biasA = rand(A_height)*2-1
 B = rand(B_height, B_width)*2-1
 biasB = rand(B_height)*2-1
 
-## Calculate intermediate values
-x1 = NNOps.convlayer(x0, filter1, bias1, (stride1_height, stride1_width))
-x2 = NNOps.convlayer(x1, filter2, bias2, (stride2_height, stride2_width))
-x3 = NNOps.fullyconnectedlayer(NNOps.flatten(x2), A, biasA)
-predicted_label = NNOps.softmaxindex(x3, B, biasB)
-
-m = Model(solver=GurobiSolver(MIPFocus = 3))
-
-@variable(m, ve[1:batch, 1:in1_height, 1:in1_width, 1:in1_channels])
-@variable(m, 0 <= vx0[1:batch, 1:in1_height, 1:in1_width, 1:in1_channels] <= 1)
-@constraint(m, vx0 .== x0 + ve) # input
-
-vx1 = NNOps.convlayerconstraint(m, vx0, filter1, bias1, (stride1_height, stride1_width))
-vx2 = NNOps.convlayerconstraint(m, vx1, filter2, bias2, (stride2_height, stride2_width))
-vx3 = NNOps.fullyconnectedlayerconstraint(m, NNOps.flatten(vx2), A, biasA)
-target_label = 2
-NNOps.softmaxconstraint(m, vx3, B, biasB, target_label, -1.0)
-
-@objective(m, Min, sum(ve.^2))
-
-println("Attempting to find adversarial example. Neural net predicted label is $predicted_label, target label is $target_label")
-
-solve(m)
-
-println("Objective value: ", getobjectivevalue(m))
-println("e = ", getvalue(ve))
+NNExamples.solve_conv_conv_fc_softmax(x0, filter1, bias1, strides1, filter2, bias2, strides2, A, biasA, B, biasB, 2, -1.0, map(_ -> 0.0, x0))
