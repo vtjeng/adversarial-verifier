@@ -4,41 +4,6 @@ using Gurobi
 include("nn_ops.jl")
 include("nn_examples.jl")
 
-"""
-Nodes    |    Current Node    |     Objective Bounds      |     Work
- Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
-
-...
-H  749    58                       0.0347209    0.00000   100%  37.5    0s
-H  781    50                       0.0170735    0.00000   100%  36.7    0s
-H 1038   211                       0.0152771    0.00000   100%  37.8    0s
-H 1479   245                       0.0128289    0.00000   100%  35.0    1s
-* 1595   248              84       0.0115409    0.00000   100%  34.3    1s
-H 2127   349                       0.0114459    0.00137  88.0%  32.3    1s
-H 2128   316                       0.0097672    0.00137  86.0%  32.3    1s
-
-Cutting planes:
-  Learned: 1
-  Cover: 4
-  Implied bound: 9
-  Clique: 2
-  MIR: 108
-  Flow cover: 69
-
-Explored 16636 nodes (547268 simplex iterations) in 4.83 seconds
-Thread count was 8 (of 8 available processors)
-
-Solution count 10: 0.00976716 0.0114459 0.0115409 ... 0.255671
-Pool objective bound 0.00976716
-
-Optimal solution found (tolerance 1.00e-04)
-Best objective 9.767161242031e-03, best bound 9.767161242031e-03, gap 0.0000%
-Objective value: 0.00976716124203126
-e = [0.0 0.0 0.0 0.00769844 -0.0219852 0.0 -0.00879821 0.0251259]
-...
-[0.0 0.0 0.0 -0.0100206 0.000587532 -0.010442 0.000612239 0.0]
-"""
-
 ### Parameters for neural net
 batch = 1
 in1_height = 8

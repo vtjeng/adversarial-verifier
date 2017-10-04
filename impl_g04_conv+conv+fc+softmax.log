@@ -1,0 +1,78 @@
+pre- ConditionalJuMP
+
+Attempting to find adversarial example. Neural net predicted label is 1, target label is 2
+Optimize a model with 1150 rows, 818 columns and 3469 nonzeros
+Model has 64 quadratic objective terms
+Variable types: 525 continuous, 293 integer (293 binary)
+...
+Presolve removed 414 rows and 241 columns
+Presolve time: 0.01s
+Presolved: 736 rows, 577 columns, 3168 nonzeros
+Presolved model has 64 quadratic objective terms
+Variable types: 354 continuous, 223 integer (223 binary)
+Presolve removed 93 rows and 93 columns
+Presolved: 643 rows, 484 columns, 2889 nonzeros
+Presolved model has 64 quadratic objective terms
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+...
+     0     2    0.00000    0   98    7.43427    0.00000   100%     -    0s
+...
+ 13061  9366    0.36796   51   89    0.58402    0.00101   100%  38.7   20s
+...
+124296 84436    0.08787   77   83    0.57558    0.08108  85.9%  47.9  201s
+
+after ConditionalJuMP
+
+ptimize a model with 2898 rows, 1010 columns and 6947 nonzeros
+Model has 64 quadratic objective terms
+Variable types: 525 continuous, 485 integer (485 binary)
+Coefficient statistics:
+  Matrix range     [2e-04, 2e+01]
+...
+Presolve removed 2044 rows and 496 columns
+Presolve time: 0.01s
+Presolved: 854 rows, 514 columns, 3362 nonzeros
+Presolved model has 64 quadratic objective terms
+Variable types: 313 continuous, 201 integer (201 binary)
+Presolve removed 72 rows and 0 columns
+Presolved: 782 rows, 586 columns, 3218 nonzeros
+Presolved model has 64 quadratic objective terms
+
+Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+     0     0    0.00000    0   97          -    0.00000      -     -    0s
+...
+H15584 10583                       0.5755818    0.07414  87.1%  34.2   15s
+ 17259 11921    0.19570   32  104    0.57558    0.07986  86.1%  36.8   20s
+...
+ 134782 84413    0.38429   26   87    0.57558    0.32231  44.0%  51.2  200s
+...
+H672317 13446                       0.5755787    0.56984  1.00%  32.1  872s
+...
+ 683248  3289     cutoff   40         0.57558    0.57405  0.27%  31.7  885s
+
+...
+Optimal solution found (tolerance 1.00e-04)
+Best objective 5.755787176430e-01, best bound 5.755275600256e-01, gap 0.0089%
+Objective value: 0.5755787176429682
+
+e =
+[0.0 0.0 0.0 -0.0508827 0.145311 0.0 -0.0192372 0.0549376]
+
+[0.0 0.0 0.0 0.161038 -0.00944203 0.0203312 0.0028216 -0.00356975]
+
+[0.0 0.0 0.0 -0.0672854 0.310163 -0.300806 -0.0600599 0.0371844]
+
+[0.0 -0.0230471 0.0658179 0.249202 -0.28457 0.00380234 0.10872 -0.00806417]
+
+[0.0 0.0226808 -0.00427672 0.0 0.0 -0.0334037 -0.087447 0.175153]
+
+[0.0 -0.0311866 0.0890627 0.0 0.0413339 -0.118041 0.240889 -0.0165905]
+
+[0.00201245 0.0929548 -0.00578713 -0.0466437 0.0023881 0.0304695 -0.0651105 0.0]
+
+[-0.00636915 0.000373439 0.0 0.147622 -0.00865542 -0.0721574 0.00423076 0.0]
