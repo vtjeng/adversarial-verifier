@@ -62,7 +62,6 @@ pooled_width = round(Int, in_width/stride_width, RoundUp)
 
 # Fix random seed so that we get consistent results
 srand(5)
-mt = MersenneTwister(5)
 
 # We select a random filter for the convolution.
 filter = rand(filter_height, filter_width, in_channels, out_channels)*2-1

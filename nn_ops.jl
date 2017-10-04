@@ -253,6 +253,7 @@ Note that `x` and `x_pooled` must have sizes that match according to `strides`.
 TODO: finish up documentation
 """
 function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 4}, strides::Tuple{Integer, Integer})::Array{JuMP.Variable, 4}
+    # TODO: Fixme change strides to a 4-tuple for consistency.
     return poolmap(
         (x) -> NNOps.maximum(model, x[:]),
         xs,
@@ -341,4 +342,97 @@ function flatten{T, N}(x::AbstractArray{T, N})
     return permutedims(x, N:-1:1)[:]
 end
 
+function abs_ge{T<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, xs::AbstractArray{T, N})::Array{JuMP.Variable}
+    return map(x -> abs_ge(model, x), xs)
+end
+
+function abs_ge{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::JuMP.Variable
+    x_abs = @variable(model)
+    u = upperbound(x)
+    l = lowerbound(x)
+    if u < 0
+        @constraint(model, x_abs == -x)
+        setlowerbound(x_abs, -u)
+        setupperbound(x_abs, -l)
+    elseif l > 0
+        @constraint(model, x_abs == x)
+        setlowerbound(x_abs, l)
+        setupperbound(x_abs, u)
+    else
+        @constraint(model, x_abs >= x)
+        @constraint(model, x_abs >= -x)
+        setlowerbound(x_abs, 0)
+        setupperbound(x_abs, max(-l, u))
+    end
+    return x_abs
+end
+
+function abs_le{T<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, xs::AbstractArray{T, N})::Array{JuMP.Variable}
+    return map(x -> abs_le(model, x), xs)
+end
+
+function abs_le{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::JuMP.Variable
+    x_abs = @variable(model)
+    u = upperbound(x)
+    l = lowerbound(x)
+    if u < 0
+        @constraint(model, x_abs == -x)
+        setlowerbound(x_abs, -u)
+        setupperbound(x_abs, -l)
+    elseif l > 0
+        @constraint(model, x_abs == x)
+        setlowerbound(x_abs, l)
+        setupperbound(x_abs, u)
+    else
+        a = @variable(model, category = :Bin)
+        @constraint(model, x_abs <= x + 2(-l)*(1-a))
+        @constraint(model, x_abs >= x)
+        @constraint(model, x_abs <= -x + 2*u*a)
+        @constraint(model, x_abs >= -x)
+        setlowerbound(x_abs, 0)
+        setupperbound(x_abs, max(-l, u))
+    end
+    return x_abs
+end
+
+function convlayer_forwardprop{T<:Real, U<:Real, V<:Real, W<:Real}(
+    input::AbstractArray{T, 4},
+    filter::AbstractArray{U, 4},
+    bias::AbstractArray{V, 1},
+    strides::NTuple{4, Int},
+    k_in::W
+    )
+    # (batch, in_height, in_width, input_in_channels) = size(input)
+    # (filter_height, filter_width, filter_in_channels, filter_out_channels) = size(filter)
+    # bias_out_channels = length(bias)
+    # if input_in_channels != filter_in_channels
+    #     throw(ArgumentError("Number of channels in input, $input_in_channels, does not match number of channels, $filter_in_channels, that filters operate on."))
+    # end
+    # if filter_out_channels != bias_out_channels
+    #     throw(ArgumentError("Number of output channels in filter, $filter_out_channels, does not match number of output channels in bias, $bias_out_channels."))
+    # end
+    # in_channels = input_in_channels
+    (d1, stride_height, stride_width, d2) = strides
+    # if ((d1 != 1) or (d2 != 1))
+    #     throw(ArgumentError("Not implemented yet."))
+    # end
+
+    m = Model(solver=GurobiSolver(MIPFocus = 3))
+    ve = map(i -> @variable(m), input)
+    ve_abs = NNOps.abs_ge(m, ve)
+    @constraint(m, sum(ve_abs) <= k_in)
+
+    vx0 = map(i -> @variable(m, lowerbound = 0, upperbound = 1), input)
+    @constraint(m, vx0 .== input + ve)
+
+    conv_input = NNOps.convlayer(input, filter, bias, (stride_height, stride_width))
+    vx1 = NNOps.convlayerconstraint(m, vx0, filter, bias, (stride_height, stride_width))
+    dvx1_abs = NNOps.abs_le(m, vx1-conv_input)
+
+    @objective(m, Max, sum(dvx1_abs))
+
+    status = solve(m)
+
+    return getobjectivevalue(m)
+end
 end
