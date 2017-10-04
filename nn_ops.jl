@@ -205,25 +205,32 @@ end
 
 function reluconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::JuMP.Variable
     x_rect = @variable(model)
+    u = upperbound(x)
+    l = lowerbound(x)
 
-    if upperbound(x) < 0
+    if u < 0
+        # rectified value is always 0
         @constraint(model, x_rect == 0)
         setlowerbound(x_rect, 0)
         setupperbound(x_rect, 0)
+    elseif l > 0
+        # rectified value is always equal to x itself.
+        @constraint(model, x_rect == x)
+        setlowerbound(x_rect, l)
+        setupperbound(x_rect, u)
     else
-        # Set big-M to be the maximum of the absolute value of x.
-        M = max(upperbound(x), -lowerbound(x))
-
         a = @variable(model, category = :Bin)
 
-        @constraint(model, x_rect <= x + M*(1-a))
+        # refined big-M formulation that takes advantage of the knowledge
+        # that lower and upper bounds  are different.
+        @constraint(model, x_rect <= x + (-l)*(1-a))
         @constraint(model, x_rect >= x)
-        @constraint(model, x_rect <= M*a)
+        @constraint(model, x_rect <= u*a)
         @constraint(model, x_rect >= 0)
 
         # Manually set the bounds for x_rect so they can be used by downstream operations.
         setlowerbound(x_rect, 0)
-        setupperbound(x_rect, M)
+        setupperbound(x_rect, u)
     end
 
     return x_rect
