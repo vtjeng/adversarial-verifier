@@ -1,5 +1,12 @@
-include("nn_ops.jl")
-include("nn_examples.jl")
+if !(pwd() in LOAD_PATH)
+    push!(LOAD_PATH, pwd())
+end
+
+using JuMP
+using Gurobi
+
+using NNExamples
+using NNOps
 
 """
 Basic example where we express the constraints for a neural net consisting
@@ -42,4 +49,5 @@ x1 = NNOps.convlayer(x0, filter, bias, strides)
 
 input = rand(batch, in_height, in_width, in_channels)
 
-NNExamples.solve_conv(input, filter, bias, strides, x1, x0 - input)
+params = NNOps.ConvolutionLayerParameters(NNOps.Conv2DParameters(filter, bias), NNOps.MaxPoolParameters(strides))
+NNExamples.solve_conv(input, params, x1, x0 - input)

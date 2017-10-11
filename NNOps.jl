@@ -5,6 +5,8 @@ using JuMP
 using ConditionalJuMP
 using Gurobi
 
+# export conv2d, relu, maxpool, avgpool, convlayer, conv2dconstraint, reluconstraint, maxpoolconstraint, convlayerconstraint, matmulconstraint, fullyconnectedlayerconstraint, fullyconnectedlayer, softmaxconstraint, softmaxindex, flatten, abs_ge, abs_le, convlayer_forwardprop, convlayer_backprop, fclayer_forwardprop, fclayer_backprop, Conv2DParameters, MaxPoolParameters, ConvolutionLayerParameters, MatrixMultiplicationParameters, FullyConnectedLayerParameters
+
 """
 For a convolution of `filter` on `input`, determines the size of the output.
 
@@ -510,13 +512,13 @@ struct MaxPoolParameters <: LayerParameters
     strides::NTuple{4, Int}
 end
 
-struct ConvolutionLayerParameters{T<:Real, U<:Real} <: LayerParameters
-    conv2dparams::Conv2DParameters{T, U}
+struct ConvolutionLayerParameters{T<:Real} <: LayerParameters
+    conv2dparams::Conv2DParameters{T, T}
     maxpoolparams::MaxPoolParameters
 
 end
 
-struct MatrixMultiplicationParameters{T<:Real, U<:Real} <::LayerParameters
+struct MatrixMultiplicationParameters{T<:Real, U<:Real} <: LayerParameters
     matrix::Array{T, 2}
     bias::Array{U, 1}
 

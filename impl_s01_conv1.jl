@@ -1,6 +1,11 @@
+if !(pwd() in LOAD_PATH)
+    push!(LOAD_PATH, pwd())
+end
+
 using MAT
-include("nn_ops.jl")
-include("util.jl")
+
+using NNOps
+using Util
 
 UUID = "2017-09-28_181157"
 nn_params = matread("data/$UUID-ch-params.mat")

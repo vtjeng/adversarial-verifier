@@ -1,4 +1,8 @@
-include("nn_ops.jl")
+if !(pwd() in LOAD_PATH)
+    push!(LOAD_PATH, pwd())
+end
+
+using NNOps
 
 # We specify the parameters for the size of the problem that we are solving.
 batch = 1

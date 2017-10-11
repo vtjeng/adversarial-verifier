@@ -1,3 +1,7 @@
+module Util
+
+export check_size, get_label, get_input
+
 function check_size(input::AbstractArray, expected_size)::Void
     input_size = size(input)
     if input_size != expected_size
@@ -13,4 +17,6 @@ end
 
 function get_input{T<:Real}(x::Array{T, 4}, test_index::Int)::Array{T, 4}
     return x[test_index:test_index, :, :, :]
+end
+
 end

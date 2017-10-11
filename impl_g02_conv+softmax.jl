@@ -1,8 +1,12 @@
-using MAT
+if !(pwd() in LOAD_PATH)
+    push!(LOAD_PATH, pwd())
+end
+
 using JuMP
 using Gurobi
-include("nn_ops.jl")
-include("nn_examples.jl")
+
+using NNExamples
+using NNOps
 
 ### Parameters for neural net
 batch = 1

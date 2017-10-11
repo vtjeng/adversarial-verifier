@@ -1,22 +1,26 @@
+if !(pwd() in LOAD_PATH)
+    push!(LOAD_PATH, pwd())
+end
+
 module NNExamples
 
-include("nn_ops.jl")
+using NNOps
 using JuMP
 using Gurobi
 
-function solve_conv{T<:Real, U<:Real, V<:Real, W<:Real, X<:Real}(
-    input::AbstractArray{T, 4},
-    filter_c1::AbstractArray{U, 4},
-    bias_c1::AbstractArray{V, 1},
-    strides_c1::NTuple{4, Int},
-    target_output::AbstractArray{W, 4},
-    perturbation_warm_start::AbstractArray{X, 4}
+# export solve_conv
+
+function solve_conv{T<:Real, U<:Real, V<:Real}(
+    input::Array{T, 4},
+    conv1_params::NNOps.ConvolutionLayerParameters,
+    target_output::AbstractArray{U, 4},
+    perturbation_warm_start::AbstractArray{V, 4}
     )
     # TODO: Make warm start optional.
     m = Model(solver=GurobiSolver(MIPFocus = 3))
 
     vx0 = map(_ -> @variable(m, lowerbound = 0, upperbound = 1), input)
-    vx1 = NNOps.convlayerconstraint(m, vx0, filter_c1, bias_c1, strides_c1)
+    vx1 = NNOps.convlayerconstraint(m, vx0, conv1_params.conv2dparams.filter, conv1_params.conv2dparams.bias, conv1_params.maxpoolparams.strides)
 
     ve = map(_ -> @variable(m), input)
     @objective(m, Min, sum(ve.^2))
