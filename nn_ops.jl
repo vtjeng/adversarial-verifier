@@ -386,19 +386,6 @@ function convlayer_forwardprop{T<:Real, U<:Real, V<:Real, W<:Real}(
     strides::NTuple{4, Int},
     k_in::W
     )
-    # (batch, in_height, in_width, input_in_channels) = size(input)
-    # (filter_height, filter_width, filter_in_channels, filter_out_channels) = size(filter)
-    # bias_out_channels = length(bias)
-    # if input_in_channels != filter_in_channels
-    #     throw(ArgumentError("Number of channels in input, $input_in_channels, does not match number of channels, $filter_in_channels, that filters operate on."))
-    # end
-    # if filter_out_channels != bias_out_channels
-    #     throw(ArgumentError("Number of output channels in filter, $filter_out_channels, does not match number of output channels in bias, $bias_out_channels."))
-    # end
-    # in_channels = input_in_channels
-    # if ((d1 != 1) or (d2 != 1))
-    #     throw(ArgumentError("Not implemented yet."))
-    # end
 
     m = Model(solver=GurobiSolver(MIPFocus = 3))
     ve = map(_ -> @variable(m), input)
@@ -418,4 +405,86 @@ function convlayer_forwardprop{T<:Real, U<:Real, V<:Real, W<:Real}(
 
     return getobjectivevalue(m)
 end
+
+function convlayer_backprop{T<:Real, U<:Real, V<:Real, W<:Real}(
+    input::AbstractArray{T, 4},
+    filter::AbstractArray{U, 4},
+    bias::AbstractArray{V, 1},
+    strides::NTuple{4, Int},
+    k_out::W
+    )
+
+    m = Model(solver=GurobiSolver(MIPFocus = 3))
+    ve = map(_ -> @variable(m), input)
+    ve_abs = NNOps.abs_ge.(m, ve)
+    # @constraint(m, sum(ve_abs) <= k_in)
+    @objective(m, Min, sum(ve_abs))
+
+    vx0 = map(_ -> @variable(m, lowerbound = 0, upperbound = 1), input)
+    @constraint(m, vx0 .== input + ve)
+
+    conv_input = NNOps.convlayer(input, filter, bias, strides)
+    vx1 = NNOps.convlayerconstraint(m, vx0, filter, bias, strides)
+    dvx1_abs = NNOps.abs_le.(m, vx1-conv_input)
+
+    # @objective(m, Max, sum(dvx1_abs))
+    @constraint(m, sum(dvx1_abs) >= k_out)
+
+    status = solve(m)
+
+    return getobjectivevalue(m)
+end
+
+function fclayer_forwardprop{T<:Real, U<:Real, V<:Real, W<:Real}(
+    input::AbstractArray{T, 1},
+    mat::AbstractArray{U, 2},
+    bias::AbstractArray{V, 1},
+    k_in::W
+    )
+
+    m = Model(solver=GurobiSolver(MIPFocus = 3))
+    ve = map(_ -> @variable(m), input)
+    ve_abs = NNOps.abs_ge.(m, ve)
+    @constraint(m, sum(ve_abs) <= k_in)
+
+    vx0 = map(_ -> @variable(m, lowerbound = 0, upperbound = 1), input)
+    @constraint(m, vx0 .== input + ve)
+
+    fc_input = NNOps.fullyconnectedlayer(input, mat, bias)
+    vx1 = NNOps.fullyconnectedlayerconstraint(m, vx0, mat, bias)
+    dvx1_abs = NNOps.abs_le.(m, vx1-fc_input)
+
+    @objective(m, Max, sum(dvx1_abs))
+
+    status = solve(m)
+
+    return getobjectivevalue(m)
+end
+
+function fclayer_backprop{T<:Real, U<:Real, V<:Real, W<:Real}(
+    input::AbstractArray{T, 1},
+    mat::AbstractArray{U, 2},
+    bias::AbstractArray{V, 1},
+    k_out::W
+    )
+
+    m = Model(solver=GurobiSolver(MIPFocus = 3))
+    ve = map(_ -> @variable(m), input)
+    ve_abs = NNOps.abs_ge.(m, ve)
+    @objective(m, Min, sum(ve_abs))
+
+    vx0 = map(_ -> @variable(m, lowerbound = 0, upperbound = 1), input)
+    @constraint(m, vx0 .== input + ve)
+
+    fc_input = NNOps.fullyconnectedlayer(input, mat, bias)
+    vx1 = NNOps.fullyconnectedlayerconstraint(m, vx0, mat, bias)
+    dvx1_abs = NNOps.abs_le.(m, vx1-fc_input)
+
+    @constraint(m, sum(dvx1_abs) >= k_out)
+
+    status = solve(m)
+
+    return getobjectivevalue(m)
+end
+
 end
