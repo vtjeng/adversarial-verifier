@@ -487,4 +487,54 @@ function fclayer_backprop{T<:Real, U<:Real, V<:Real, W<:Real}(
     return getobjectivevalue(m)
 end
 
+abstract type LayerParameters end
+
+struct Conv2DParameters{T<:Real, U<:Real} <: LayerParameters
+    filter::Array{T, 4}
+    bias::Array{U, 1}
+
+    function Conv2DParameters{T, U}(filter::Array{T, 4}, bias::Array{U, 1}) where {T<:Real, U<:Real}
+        (filter_height, filter_width, filter_in_channels, filter_out_channels) = size(filter)
+        bias_out_channels = length(bias)
+        @assert filter_out_channels == bias_out_channels "For the convolution layer, number of output channels in filter, $filter_out_channels, does not match number of output channels in bias, $bias_out_channels."
+        return new(filter, bias)
+    end
+
+end
+
+function Conv2DParameters(filter::Array{T, 4}, bias::Array{U, 1}) where {T<:Real, U<:Real}
+    Conv2DParameters{T, U}(filter, bias)
+end
+
+struct MaxPoolParameters <: LayerParameters
+    strides::NTuple{4, Int}
+end
+
+struct ConvolutionLayerParameters{T<:Real, U<:Real} <: LayerParameters
+    conv2dparams::Conv2DParameters{T, U}
+    maxpoolparams::MaxPoolParameters
+
+end
+
+struct MatrixMultiplicationParameters{T<:Real, U<:Real} <::LayerParameters
+    matrix::Array{T, 2}
+    bias::Array{U, 1}
+
+    function MatrixMultiplicationParameters{T, U}(matrix::Array{T, 2}, bias::Array{U, 1}) where {T<:Real, U<:Real}
+        (matrix_height, matrix_width) = size(filter)
+        bias_height = length(bias_height)
+        @assert matrix_height == matrix_width "Number of output channels in matrix, $matrix_height, does not match number of output channels in bias, $bias_height."
+        return new(matrix, bias)
+    end
+
+end
+
+function MatrixMultiplicationParameters(matrix::Array{T, 4}, bias::Array{U, 1}) where {T<:Real, U<:Real}
+    MatrixMultiplicationParameters{T, U}(matrix, bias)
+end
+
+struct FullyConnectedLayerParameters{T<:Real, U<:Real} <: LayerParameters
+    matmulparams::MatrixMultiplicationParameters{T, U}
+end
+
 end
