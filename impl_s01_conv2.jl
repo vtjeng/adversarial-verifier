@@ -1,3 +1,6 @@
+# TODO: fix, the helper function for solving forward propagation is too strict
+# with its inputs
+
 using MAT
 include("nn_ops.jl")
 include("util.jl")
