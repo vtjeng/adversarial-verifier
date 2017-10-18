@@ -51,7 +51,7 @@ test_index = 2 # which test sample we're choosing
 y_ = mnist_test_data_resized["y_"]
 x_resize = mnist_test_data_resized["x_resize"]
 actual_label = get_label(y_, test_index)
-x0 = get_input(x_resize, test_index) # NB: weird indexing preserves singleton first dimension
+x0 = get_input(x_resize, test_index)
 
 conv1params = ConvolutionLayerParameters(
     get_conv_params(param_dict, "conv1", (filter1_height, filter1_width, in1_channels, out1_channels)),
