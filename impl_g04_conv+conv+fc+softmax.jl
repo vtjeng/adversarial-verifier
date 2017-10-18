@@ -45,13 +45,29 @@ B_width = A_height
 srand(5)
 x0 = rand(batch, in1_height, in1_width, in1_channels)
 
-filter1 = rand(filter1_height, filter1_width, in1_channels, out1_channels)*2-1
-bias1 = rand(out1_channels)*2-1
-filter2 = rand(filter2_height, filter2_width, in2_channels, out2_channels)*2-1
-bias2 = rand(out2_channels)*2-1
-A = rand(A_height, A_width)*2-1
-biasA = rand(A_height)*2-1
-B = rand(B_height, B_width)*2-1
-biasB = rand(B_height)*2-1
+conv1params = NNParameters.ConvolutionLayerParameters(
+    rand(filter1_height, filter1_width, in1_channels, out1_channels)*2-1,
+    rand(out1_channels)*2-1,
+    strides1
+)
 
-NNExamples.solve_conv_conv_fc_softmax(x0, filter1, bias1, strides1, filter2, bias2, strides2, A, biasA, B, biasB, 2, -1.0, map(_ -> 0.0, x0))
+conv2params = NNParameters.ConvolutionLayerParameters(
+    rand(filter2_height, filter2_width, in2_channels, out2_channels)*2-1,
+    rand(out2_channels)*2-1,
+    strides2
+)
+
+fc1params = NNParameters.MatrixMultiplicationParameters(
+    rand(A_height, A_width)*2-1,
+    rand(A_height)*2-1
+)
+
+softmaxparams = NNParameters.MatrixMultiplicationParameters(
+    rand(B_height, B_width)*2-1,
+    rand(B_height)*2-1
+)
+
+NNExamples.solve_conv_conv_fc_softmax(
+    x0,
+    conv1params, conv2params, fc1params, softmaxparams,
+    2, -1.0, map(_ -> 0.0, x0))

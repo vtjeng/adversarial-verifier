@@ -7,6 +7,7 @@ using Gurobi
 
 using NNExamples
 using NNOps
+using NNParameters
 
 ### Parameters for neural net
 batch = 1
@@ -29,9 +30,17 @@ B_width = pooled1_height*pooled1_width*out1_channels
 srand(5)
 x0 = rand(batch, in1_height, in1_width, in1_channels)
 
-filter1 = rand(filter1_height, filter1_width, in1_channels, out1_channels)*2-1
-bias1 = rand(out1_channels)*2-1
-B = rand(B_height, B_width)*2-1
-biasB = rand(B_height)*2-1
+conv1params = NNParameters.ConvolutionLayerParameters(
+    rand(filter1_height, filter1_width, in1_channels, out1_channels)*2-1,
+    rand(out1_channels)*2-1,
+    strides1
+)
+softmaxparams = NNParameters.MatrixMultiplicationParameters(
+    rand(B_height, B_width)*2-1,
+    rand(B_height)*2-1
+)
 
-NNExamples.solve_conv_softmax(x0, filter1, bias1, strides1, B, biasB, 3, -1.0, map(_ -> 0.0, x0))
+NNExamples.solve_conv_softmax(
+    x0,
+    conv1params, softmaxparams,
+    3, -1.0, map(_ -> 0.0, x0))

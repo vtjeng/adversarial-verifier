@@ -7,6 +7,7 @@ using JuMP
 using Gurobi
 
 using NNExamples
+using NNParameters
 using NNOps
 using Util
 
@@ -25,27 +26,21 @@ C_height = 10
 C_width = B_height
 
 UUID = "2017-10-09_201838"
-nn_params = matread("data/$UUID-ch-params.mat")
-x_reg = matread("data/$UUID-adversarial-examples.mat")["x"]
-mnist_test_data_resized = matread("data/mnist_test_data_resized.mat")
+param_dict = matread("data/$UUID-ch-params.mat")
+x_ = matread("data/$UUID-adversarial-examples.mat")["x"]
+y_ = matread("data/mnist_test_data_resized.mat")["y_"]
 test_index = 2 # which test sample we're choosing
-y_ = mnist_test_data_resized["y_"]
-x_resize = mnist_test_data_resized["x_resize"]
+
+x0 = get_input(x_, test_index)
 actual_label = get_label(y_, test_index)
-x0 = get_input(x_reg, test_index) # NB: weird indexing preserves singleton first dimension
 
-A = transpose(nn_params["fc1/weight"])
-biasA = squeeze(nn_params["fc1/bias"], 1)
-B = transpose(nn_params["fc2/weight"])
-biasB = squeeze(nn_params["fc2/bias"], 1)
-C = transpose(nn_params["logits/weight"])
-biasC = squeeze(nn_params["logits/bias"], 1)
+fc1params = get_matrix_params(param_dict, "fc1", (A_height, A_width))
+fc2params = get_matrix_params(param_dict, "fc2", (B_height, B_width))
+softmaxparams = get_matrix_params(param_dict, "logits", (C_height, C_width))
 
-check_size(A, (A_height, A_width))
-check_size(biasA, (A_height, ))
-check_size(B, (B_height, B_width))
-check_size(biasB, (B_height, ))
-check_size(C, (C_height, C_width))
-check_size(biasC, (C_height, ))
-
-map(target_label -> NNExamples.solve_fc_fc_softmax(x0, A, biasA, B, biasB, C, biasC, target_label, 0.0, map(_ -> 0.0, x0)), 6:10)
+for target_label in 1:1
+    NNExamples.solve_fc_fc_softmax(
+        x0,
+        fc1params, fc2params, softmaxparams,
+        target_label, 0.0, map(_ -> 0.0, x0))
+end

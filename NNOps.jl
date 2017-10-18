@@ -1,3 +1,7 @@
+if !(pwd() in LOAD_PATH)
+    push!(LOAD_PATH, pwd())
+end
+
 module NNOps
 
 using Base.Cartesian
@@ -5,7 +9,9 @@ using JuMP
 using ConditionalJuMP
 using Gurobi
 
-# export conv2d, relu, maxpool, avgpool, convlayer, conv2dconstraint, reluconstraint, maxpoolconstraint, convlayerconstraint, matmulconstraint, fullyconnectedlayerconstraint, fullyconnectedlayer, softmaxconstraint, softmaxindex, flatten, abs_ge, abs_le, convlayer_forwardprop, convlayer_backprop, fclayer_forwardprop, fclayer_backprop, Conv2DParameters, MaxPoolParameters, ConvolutionLayerParameters, MatrixMultiplicationParameters, FullyConnectedLayerParameters
+using NNParameters
+
+# export conv2d, relu, maxpool, avgpool, convlayer, conv2dconstraint, reluconstraint, maxpoolconstraint, convlayerconstraint, matmulconstraint, fullyconnectedlayerconstraint, fullyconnectedlayer, softmaxconstraint, softmaxindex, flatten, abs_ge, abs_le, convlayer_forwardprop, convlayer_backprop, fclayer_forwardprop, fclayer_backprop
 
 """
 For a convolution of `filter` on `input`, determines the size of the output.
@@ -13,9 +19,11 @@ For a convolution of `filter` on `input`, determines the size of the output.
 # Throws
 * ArgumentError if input and filter are not compatible.
 """
-function getconv2doutputsize{T, U}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4})::NTuple{4, Int}
+function getconv2doutputsize{T}(
+    input::AbstractArray{T, 4},
+    params::Conv2DParameters)::NTuple{4, Int}
     (batch, in_height, in_width, input_in_channels) = size(input)
-    (filter_height, filter_width, filter_in_channels, out_channels) = size(filter)
+    (filter_height, filter_width, filter_in_channels, out_channels) = size(params.filter)
     if input_in_channels != filter_in_channels
         throw(ArgumentError("Number of channels in input, $input_in_channels, does not match number of channels, $filter_in_channels, that filters operate on."))
     end
@@ -31,21 +39,18 @@ Mirrors `tf.nn.conv2d` from `tensorflow` package, with `strides` = [1, 1, 1, 1],
 """
 function conv2d{T<:Union{Real, JuMP.AffExpr, JuMP.Variable}, U<:Real, V<:Real}(
     input::AbstractArray{T, 4},
-    filter::AbstractArray{U, 4},
-    bias::AbstractArray{V, 1})
+    params::Conv2DParameters{U, V})
     # TEST PLAN:
     #  (1) Incorrectly sized input,
     #  (2) Incorrectly sized filter,
     #  (3) Non-matching elements of array
     #  (4) Non-matching input_in_channels and filter_in_channels
+    filter = params.filter
+
     (batch, in_height, in_width, input_in_channels) = size(input)
     (filter_height, filter_width, filter_in_channels, filter_out_channels) = size(filter)
-    bias_out_channels = length(bias)
-    if filter_out_channels != bias_out_channels
-        throw(ArgumentError("Number of output channels in filter, $filter_out_channels, does not match number of output channels in bias, $bias_out_channels."))
-    end
 
-    output_size = getconv2doutputsize(input, filter)
+    output_size = getconv2doutputsize(input, params)
 
     # Considered using offset arrays here, but looks like it currently is not
     # really supported
@@ -76,7 +81,7 @@ function conv2d{T<:Union{Real, JuMP.AffExpr, JuMP.Variable}, U<:Real, V<:Real}(
                 end
             end
         end
-        s += bias[i_4]
+        s += params.bias[i_4]
         (@nref 4 output i) = s
     end
 
@@ -107,18 +112,24 @@ end
 Computes the result of a max-pooling operation on `input_array` with specified
 `strides`.
 """
-function maxpool{T<:Real, N}(input::AbstractArray{T, N}, strides::NTuple{N, Int})::AbstractArray{T, N}
+function maxpool{T<:Real, N}(
+    input::AbstractArray{T, N},
+    params::PoolParameters{N})::AbstractArray{T, N}
     # NB: Tried to use pooling function from Knet.relu but it had way too many
     # incompatibilities
-    return poolmap(Base.maximum, input, strides)
+    return poolmap(Base.maximum, input, params.strides)
 end
 
-function avgpool{T<:Real, N}(input::AbstractArray{T, N}, strides::NTuple{N, Int})::AbstractArray{T, N}
-    return poolmap(mean, input, strides)
+function avgpool{T<:Real, N}(
+    input::AbstractArray{T, N},
+    params::PoolParameters{N})::AbstractArray{T, N}
+    return poolmap(mean, input, params.strides)
 end
 
-function convlayer{T<:Real, U<:Real, V<:Real}(input::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1}, strides::NTuple{4, Int})
-    return maxpool(relu(conv2d(input, filter, bias)), strides)
+function convlayer{T<:Real}(
+    input::AbstractArray{T, 4},
+    params::ConvolutionLayerParameters)
+    return maxpool(relu(conv2d(input, params.conv2dparams)), params.maxpoolparams)
 end
 
 """
@@ -178,8 +189,11 @@ end
 Imposes a 2d convolution constraint between `x` and `x_conv` as determined by
 the filters.
 """
-function conv2dconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1})
-    return conv2d(x, filter, bias)
+function conv2dconstraint{T<:JuMP.AbstractJuMPScalar}(
+    model::JuMP.Model,
+    x::AbstractArray{T, 4},
+    params::Conv2DParameters)
+    return conv2d(x, params)
 end
 
 """
@@ -191,7 +205,9 @@ For `|x| < M`, `x_rect` = `x` if `x` > 0 and 0 otherwise.
 Note that `x` and `x_rect` must be arrays of the same size.
 
 """
-function reluconstraint{T<:JuMP.AbstractJuMPScalar, N}(model::JuMP.Model, xs::AbstractArray{T, N})::Array{JuMP.Variable, N}
+function reluconstraint{T<:JuMP.AbstractJuMPScalar, N}(
+    model::JuMP.Model,
+    xs::AbstractArray{T, N})::Array{JuMP.Variable, N}
     return map(x -> reluconstraint(model, x), xs)
 end
 
@@ -254,25 +270,18 @@ Note that `x` and `x_pooled` must have sizes that match according to `strides`.
 
 TODO: finish up documentation
 """
-function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 4}, strides::NTuple{4, Integer})::Array{JuMP.Variable, 4}
-    # TODO: Fixme change strides to a 4-tuple for consistency.
+function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(
+    model::JuMP.Model,
+    xs::AbstractArray{T, 4},
+    params::PoolParameters{4})::Array{JuMP.Variable, 4}
     return poolmap(
         (x) -> NNOps.maximum(model, x[:]),
         xs,
-        strides
+        params.strides
     )
 end
 
 function maximum{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 1})
-    if (Base.maximum(map(upperbound, xs)) == Inf)
-        println(xs)
-        println(map(upperbound, xs))
-        for (a, b) in linearterms(xs[1])
-            println(a)
-            println(upperbound(b))
-            println(" ")
-        end
-    end
     x_max = @variable(model,
         lowerbound = Base.maximum(map(lowerbound, xs)),
         upperbound = Base.maximum(map(upperbound, xs)))
@@ -287,37 +296,48 @@ function maximum{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArra
     return x_max
 end
 
-function convlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 4}, filter::AbstractArray{U, 4}, bias::AbstractArray{V, 1}, strides::NTuple{4, Integer})::Array{JuMP.Variable, 4}
-    x_conv = conv2dconstraint(model, x, filter, bias)
-    x_maxpool = maxpoolconstraint(model, x_conv, strides)
+function convlayerconstraint{T<:JuMP.AbstractJuMPScalar}(
+    model::JuMP.Model,
+    x::AbstractArray{T, 4},
+    params::ConvolutionLayerParameters)::Array{JuMP.Variable, 4}
+    x_conv = conv2dconstraint(model, x, params.conv2dparams)
+    x_maxpool = maxpoolconstraint(model, x_conv, params.maxpoolparams)
     x_relu = reluconstraint(model, x_maxpool)
     return x_relu
 end
 
-function matmulconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1})
-    return weights*x .+ bias
+function matmulconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::AbstractArray{T, 1}, params::MatrixMultiplicationParameters)
+    return params.matrix*x .+ params.bias
 end
 
-function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1})::Array{JuMP.Variable, 1}
-    return reluconstraint(model, matmulconstraint(model, x, weights, bias))
+function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::AbstractArray{T, 1}, params::MatrixMultiplicationParameters)::Array{JuMP.Variable, 1}
+    return reluconstraint(model, matmulconstraint(model, x, params))
 end
 
-function fullyconnectedlayer{T<:Real, U<:Real, V<:Real}(x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1})
-    return NNOps.relu(weights*x + bias)
+function fullyconnectedlayer{T<:Real}(
+    x::AbstractArray{T, 1},
+    params::MatrixMultiplicationParameters)
+    return relu(params.matrix*x + params.bias)
 end
 
-# TODO: refactor fully connected layer to make non-linearity constraint optional
-# TODO: refactor softmax to apply on single variable
-
-function softmaxconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1}, target_index::Integer)
-    # TODO: error checking on target index
-    x_matmul = matmulconstraint(model, x, weights, bias)
+function softmaxconstraint{T<:JuMP.AbstractJuMPScalar}(
+    model::JuMP.Model,
+    x::AbstractArray{T, 1},
+    params::MatrixMultiplicationParameters,
+    target_index::Integer)
+    # TODO: error checking on target index if out of bounds
+    x_matmul = matmulconstraint(model, x, params)
     @constraint(model, x_matmul - x_matmul[target_index].<= 0)
 end
 
-function softmaxconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::JuMP.Model, x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1}, target_index::Integer, tol::Float64)
+function softmaxconstraint{T<:JuMP.AbstractJuMPScalar}(
+    model::JuMP.Model,
+    x::AbstractArray{T, 1},
+    params::MatrixMultiplicationParameters,
+    target_index::Integer,
+    tol::Float64)
     # TODO: error checking on target index
-    x_matmul = matmulconstraint(model, x, weights, bias)
+    x_matmul = matmulconstraint(model, x, params)
     for i in 1:size(x_matmul)[1]
         if (i != target_index)
             @constraint(model, x_matmul[i] - x_matmul[target_index]<= tol)
@@ -325,8 +345,10 @@ function softmaxconstraint{T<:JuMP.AbstractJuMPScalar, U<:Real, V<:Real}(model::
     end
 end
 
-function softmaxindex{T<:Real, U<:Real, V<:Real}(x::AbstractArray{T, 1}, weights::AbstractArray{U, 2}, bias::AbstractArray{V, 1})
-    return findmax(weights*x + bias)[2]
+function softmaxindex{T<:Real}(
+    x::AbstractArray{T, 1},
+    params::MatrixMultiplicationParameters)::Integer
+    return findmax(params.matrix*x + params.bias)[2]
 end
 
 """
@@ -336,7 +358,7 @@ function flatten{T, N}(x::AbstractArray{T, N})
     return permutedims(x, N:-1:1)[:]
 end
 
-function abs_ge{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::JuMP.Variable
+function abs_ge(model::JuMP.Model, x::JuMP.AbstractJuMPScalar)::JuMP.Variable
     x_abs = @variable(model)
     u = upperbound(x)
     l = lowerbound(x)
@@ -357,7 +379,7 @@ function abs_ge{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::JuMP.Varia
     return x_abs
 end
 
-function abs_le{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::JuMP.Variable
+function abs_le(model::JuMP.Model, x::JuMP.AbstractJuMPScalar)::JuMP.Variable
     x_abs = @variable(model)
     u = upperbound(x)
     l = lowerbound(x)
@@ -381,162 +403,101 @@ function abs_le{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::JuMP.Varia
     return x_abs
 end
 
-function convlayer_forwardprop{T<:Real, U<:Real, V<:Real, W<:Real}(
+function layer{T<:Real}(
     input::AbstractArray{T, 4},
-    filter::AbstractArray{U, 4},
-    bias::AbstractArray{V, 1},
-    strides::NTuple{4, Int},
-    k_in::W
-    )
-
-    m = Model(solver=GurobiSolver(MIPFocus = 3))
-    ve = map(_ -> @variable(m), input)
-    ve_abs = NNOps.abs_ge.(m, ve)
-    @constraint(m, sum(ve_abs) <= k_in)
-
-    vx0 = map(_ -> @variable(m, lowerbound = 0, upperbound = 1), input)
-    @constraint(m, vx0 .== input + ve)
-
-    conv_input = NNOps.convlayer(input, filter, bias, strides)
-    vx1 = NNOps.convlayerconstraint(m, vx0, filter, bias, strides)
-    dvx1_abs = NNOps.abs_le.(m, vx1-conv_input)
-
-    @objective(m, Max, sum(dvx1_abs))
-
-    status = solve(m)
-
-    return getobjectivevalue(m)
+    params::ConvolutionLayerParameters)
+    return convlayer(input, params)
 end
 
-function convlayer_backprop{T<:Real, U<:Real, V<:Real, W<:Real}(
+function layer{T<:Real}(
+    input::AbstractArray{T, 1},
+    params::MatrixMultiplicationParameters)
+    return fullyconnectedlayer(input, params)
+end
+
+function layerconstraint{T<:JuMP.AbstractJuMPScalar}(
+    model::JuMP.Model,
     input::AbstractArray{T, 4},
-    filter::AbstractArray{U, 4},
-    bias::AbstractArray{V, 1},
-    strides::NTuple{4, Int},
-    k_out::W
-    )
-
-    m = Model(solver=GurobiSolver(MIPFocus = 3))
-    ve = map(_ -> @variable(m), input)
-    ve_abs = NNOps.abs_ge.(m, ve)
-    # @constraint(m, sum(ve_abs) <= k_in)
-    @objective(m, Min, sum(ve_abs))
-
-    vx0 = map(_ -> @variable(m, lowerbound = 0, upperbound = 1), input)
-    @constraint(m, vx0 .== input + ve)
-
-    conv_input = NNOps.convlayer(input, filter, bias, strides)
-    vx1 = NNOps.convlayerconstraint(m, vx0, filter, bias, strides)
-    dvx1_abs = NNOps.abs_le.(m, vx1-conv_input)
-
-    # @objective(m, Max, sum(dvx1_abs))
-    @constraint(m, sum(dvx1_abs) >= k_out)
-
-    status = solve(m)
-
-    return getobjectivevalue(m)
+    params::ConvolutionLayerParameters)
+    return convlayerconstraint(model, input, params)
 end
 
-function fclayer_forwardprop{T<:Real, U<:Real, V<:Real, W<:Real}(
+function layerconstraint{T<:JuMP.AbstractJuMPScalar}(
+    model::JuMP.Model,
     input::AbstractArray{T, 1},
-    mat::AbstractArray{U, 2},
-    bias::AbstractArray{V, 1},
-    k_in::W
+    params::MatrixMultiplicationParameters)
+    return fullyconnectedlayerconstraint(model, input, params)
+end
+
+
+function prop{T<:Real, U<:Real, V<:Real}(
+    input::AbstractArray{T},
+    input_lowerbounds::AbstractArray{U},
+    input_upperbounds::AbstractArray{V},
+    params::NNParameters.LayerParameters
     )
+
+    @assert size(input) == size(input_lowerbounds) "Size of input does not match size of lowerbounds."
+    @assert size(input) == size(input_upperbounds) "Size of input does not match size of upperbounds."
 
     m = Model(solver=GurobiSolver(MIPFocus = 3))
     ve = map(_ -> @variable(m), input)
-    ve_abs = NNOps.abs_ge.(m, ve)
-    @constraint(m, sum(ve_abs) <= k_in)
+    ve_abs = abs_ge.(m, ve)
 
-    vx0 = map(_ -> @variable(m, lowerbound = 0, upperbound = 1), input)
+    vx0 = reshape(
+        map(t -> @variable(m, lowerbound = t[1], upperbound = t[2]), zip(input_lowerbounds, input_upperbounds)),
+        size(input)
+    )
+
     @constraint(m, vx0 .== input + ve)
 
-    fc_input = NNOps.fullyconnectedlayer(input, mat, bias)
-    vx1 = NNOps.fullyconnectedlayerconstraint(m, vx0, mat, bias)
-    dvx1_abs = NNOps.abs_le.(m, vx1-fc_input)
+    conv_input = layer(input, params)
+    vx1 = layerconstraint(m, vx0, params)
+    dvx1_abs = abs_le.(m, vx1-conv_input)
 
-    @objective(m, Max, sum(dvx1_abs))
+    input_perturbation_norm = sum(ve_abs)
+    output_perturbation_norm = sum(dvx1_abs)
+
+    return (m, input_perturbation_norm, output_perturbation_norm)
+
+end
+
+function forwardprop{T<:Real, U<:Real, V<:Real}(
+    input::AbstractArray{T},
+    input_lowerbounds::AbstractArray{U},
+    input_upperbounds::AbstractArray{V},
+    params::NNParameters.LayerParameters,
+    k_in::Real
+    )::Real
+
+    (m, input_perturbation_norm, output_perturbation_norm) =
+        prop(input, input_lowerbounds, input_upperbounds, params)
+
+    @constraint(m, input_perturbation_norm <= k_in)
+    @objective(m, Max, output_perturbation_norm)
 
     status = solve(m)
 
     return getobjectivevalue(m)
 end
 
-function fclayer_backprop{T<:Real, U<:Real, V<:Real, W<:Real}(
-    input::AbstractArray{T, 1},
-    mat::AbstractArray{U, 2},
-    bias::AbstractArray{V, 1},
-    k_out::W
-    )
+function backprop{T<:Real, U<:Real, V<:Real}(
+    input::AbstractArray{T},
+    input_lowerbounds::AbstractArray{U},
+    input_upperbounds::AbstractArray{V},
+    params::NNParameters.LayerParameters,
+    k_out::Real
+    )::Real
 
-    m = Model(solver=GurobiSolver(MIPFocus = 3))
-    ve = map(_ -> @variable(m), input)
-    ve_abs = NNOps.abs_ge.(m, ve)
-    @objective(m, Min, sum(ve_abs))
+    (m, input_perturbation_norm, output_perturbation_norm) =
+        prop(input, input_lowerbounds, input_upperbounds, params)
 
-    vx0 = map(_ -> @variable(m, lowerbound = 0, upperbound = 1), input)
-    @constraint(m, vx0 .== input + ve)
-
-    fc_input = NNOps.fullyconnectedlayer(input, mat, bias)
-    vx1 = NNOps.fullyconnectedlayerconstraint(m, vx0, mat, bias)
-    dvx1_abs = NNOps.abs_le.(m, vx1-fc_input)
-
-    @constraint(m, sum(dvx1_abs) >= k_out)
+    @objective(m, Min, input_perturbation_norm)
+    @constraint(m, output_perturbation_norm >= k_out)
 
     status = solve(m)
 
     return getobjectivevalue(m)
-end
-
-abstract type LayerParameters end
-
-struct Conv2DParameters{T<:Real, U<:Real} <: LayerParameters
-    filter::Array{T, 4}
-    bias::Array{U, 1}
-
-    function Conv2DParameters{T, U}(filter::Array{T, 4}, bias::Array{U, 1}) where {T<:Real, U<:Real}
-        (filter_height, filter_width, filter_in_channels, filter_out_channels) = size(filter)
-        bias_out_channels = length(bias)
-        @assert filter_out_channels == bias_out_channels "For the convolution layer, number of output channels in filter, $filter_out_channels, does not match number of output channels in bias, $bias_out_channels."
-        return new(filter, bias)
-    end
-
-end
-
-function Conv2DParameters(filter::Array{T, 4}, bias::Array{U, 1}) where {T<:Real, U<:Real}
-    Conv2DParameters{T, U}(filter, bias)
-end
-
-struct MaxPoolParameters <: LayerParameters
-    strides::NTuple{4, Int}
-end
-
-struct ConvolutionLayerParameters{T<:Real} <: LayerParameters
-    conv2dparams::Conv2DParameters{T, T}
-    maxpoolparams::MaxPoolParameters
-
-end
-
-struct MatrixMultiplicationParameters{T<:Real, U<:Real} <: LayerParameters
-    matrix::Array{T, 2}
-    bias::Array{U, 1}
-
-    function MatrixMultiplicationParameters{T, U}(matrix::Array{T, 2}, bias::Array{U, 1}) where {T<:Real, U<:Real}
-        (matrix_height, matrix_width) = size(filter)
-        bias_height = length(bias_height)
-        @assert matrix_height == matrix_width "Number of output channels in matrix, $matrix_height, does not match number of output channels in bias, $bias_height."
-        return new(matrix, bias)
-    end
-
-end
-
-function MatrixMultiplicationParameters(matrix::Array{T, 4}, bias::Array{U, 1}) where {T<:Real, U<:Real}
-    MatrixMultiplicationParameters{T, U}(matrix, bias)
-end
-
-struct FullyConnectedLayerParameters{T<:Real, U<:Real} <: LayerParameters
-    matmulparams::MatrixMultiplicationParameters{T, U}
 end
 
 end

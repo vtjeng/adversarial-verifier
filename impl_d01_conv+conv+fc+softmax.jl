@@ -7,6 +7,7 @@ using JuMP
 using Gurobi
 
 using NNExamples
+using NNParameters
 using NNOps
 using Util
 
@@ -43,7 +44,7 @@ B_height = 10
 B_width = A_height
 
 UUID = "2017-09-28_181157"
-nn_params = matread("data/$UUID-ch-params.mat")
+param_dict = matread("data/$UUID-ch-params.mat")
 x_adv = matread("data/$UUID-adversarial-examples.mat")["adv_x"]
 mnist_test_data_resized = matread("data/mnist_test_data_resized.mat")
 test_index = 2 # which test sample we're choosing
@@ -52,32 +53,28 @@ x_resize = mnist_test_data_resized["x_resize"]
 actual_label = get_label(y_, test_index)
 x0 = get_input(x_resize, test_index) # NB: weird indexing preserves singleton first dimension
 
-filter1 = nn_params["conv1/weight"]
-bias1 = squeeze(nn_params["conv1/bias"], 1)
-filter2 = nn_params["conv2/weight"]
-bias2 = squeeze(nn_params["conv2/bias"], 1)
-A = transpose(nn_params["fc1/weight"])
-biasA = squeeze(nn_params["fc1/bias"], 1)
-B = transpose(nn_params["logits/weight"])
-biasB = squeeze(nn_params["logits/bias"], 1)
+conv1params = ConvolutionLayerParameters(
+    get_conv_params(param_dict, "conv1", (filter1_height, filter1_width, in1_channels, out1_channels)),
+    PoolParameters(strides1)
+    )
+
+conv2params = ConvolutionLayerParameters(
+    get_conv_params(param_dict, "conv2", (filter2_height, filter2_width, in2_channels, out2_channels)),
+    PoolParameters(strides2)
+    )
+
+fc1params = get_matrix_params(param_dict, "fc1", (A_height, A_width))
+softmaxparams = get_matrix_params(param_dict, "logits", (B_height, B_width))
 
 check_size(x0, (batch, in1_height, in1_width, in1_channels))
-check_size(filter1, (filter1_height, filter1_width, in1_channels, out1_channels))
-check_size(bias1, (out1_channels, ))
-check_size(filter2, (filter2_height, filter2_width, in2_channels, out2_channels))
-check_size(bias2, (out2_channels, ))
-check_size(A, (A_height, A_width))
-check_size(biasA, (A_height, ))
-check_size(B, (B_height, B_width))
-check_size(biasB, (B_height, ))
 
 function calculate_predicted_label{T<:Real}(
     x0_::AbstractArray{T, 4})::Int
-    x1_ = NNOps.convlayer(x0_, filter1, bias1, strides1)
-    x2_ = NNOps.convlayer(x1_, filter2, bias2, strides2)
+    x1_ = NNOps.convlayer(x0_, conv1params)
+    x2_ = NNOps.convlayer(x1_, conv2params)
     x3_ = NNOps.flatten(x2_)
-    x4_ = NNOps.fullyconnectedlayer(x3_, A, biasA)
-    predicted_label = NNOps.softmaxindex(x4_, B, biasB)
+    x4_ = NNOps.fullyconnectedlayer(x3_, fc1params)
+    predicted_label = NNOps.softmaxindex(x4_, softmaxparams)
     return predicted_label
 end
 
@@ -89,7 +86,7 @@ min_dist = Inf
 target_sample_index = -1 # TODO: fix
 
 test_predicted_label = calculate_predicted_label(x0)
-adversarial_image = NNOps.avgpool(get_input(x_adv, test_index), (1, 2, 2, 1))
+adversarial_image = NNOps.avgpool(get_input(x_adv, test_index), PoolParameters((1, 2, 2, 1)))
 adversarial_predicted_label = calculate_predicted_label(adversarial_image)
 println("FGSM adversarial image predicted label by NN is $adversarial_predicted_label, original image predicted label by NN is $test_predicted_label.")
 for i = 1:num_samples
@@ -119,4 +116,7 @@ if (adversarial_predicted_label!=test_predicted_label) && (adversarial_dist < mi
 end
 println("Number correct on regular samples is $num_correct out of $num_samples.")
 
-NNExamples.solve_conv_conv_fc_softmax(x0, filter1, bias1, strides1, filter2, bias2, strides2, A, biasA, B, biasB, target_label, 0.0, candidate_adversarial_example - x0)
+NNExamples.solve_conv_conv_fc_softmax(
+    x0,
+    conv1params, conv2params, fc1params, softmaxparams,
+    target_label, 0.0, candidate_adversarial_example - x0)
