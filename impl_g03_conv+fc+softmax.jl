@@ -51,7 +51,7 @@ softmaxparams = NNParameters.MatrixMultiplicationParameters(
 (m, ve) = NNExamples.initialize(
     x0,
     conv1params, fc1params, softmaxparams,
-    3, -1.0, map(_ -> 0.0, x0))
+    3, -1.0)
 
 abs_ve = NNOps.abs_ge.(m, ve)
 e_norm = sum(abs_ve)

@@ -11,23 +11,25 @@ using NNOps
 using NNParameters
 using NNPredict
 
-function initialize_common{T<:Real, U<:Real}(
+function initialize_common{T<:Real}(
     input::Array{T, 4},
-    perturbation_warm_start::Array{U, 4}
+    perturbation_warm_start::Union{Void, Array} = nothing
     )::Tuple{JuMP.Model, Array{JuMP.Variable, 4}, Array{JuMP.Variable, 4}}
     m = Model(solver=GurobiSolver(MIPFocus = 3))
     vx0 = map(_ -> @variable(m, lowerbound = 0, upperbound = 1), input)
     ve = map(_ -> @variable(m), input)
     @constraint(m, vx0 .== input + ve)
-    setvalue(ve, perturbation_warm_start)
+    if perturbation_warm_start != nothing
+        setvalue(ve, perturbation_warm_start)
+    end
     return (m, vx0, ve)
 end
 
-function initialize{T<:Real, U<:Real, V<:Real}(
+function initialize{T<:Real, U<:Real}(
     input::Array{T, 4},
     conv1_params::ConvolutionLayerParameters,
     target_output::Array{U, 4},
-    perturbation_warm_start::Array{V, 4}
+    perturbation_warm_start::Union{Void, Array} = nothing
     )::Tuple{JuMP.Model, Array{JuMP.Variable}}
     
     (m, vx0, ve) = initialize_common(input, perturbation_warm_start)
@@ -38,13 +40,13 @@ function initialize{T<:Real, U<:Real, V<:Real}(
     return (m, ve)
 end
 
-function initialize{T<:Real, U<:Real, V<:Real}(
+function initialize{T<:Real}(
     input::Array{T, 4},
     conv1_params::ConvolutionLayerParameters,
     softmax_params::MatrixMultiplicationParameters,
     target_label::Int,
-    margin::U,
-    perturbation_warm_start::Array{V, 4}
+    margin::Real,
+    perturbation_warm_start::Union{Void, Array} = nothing
     )::Tuple{JuMP.Model, Array{JuMP.Variable}}
 
     predicted_label = predict_label(input, conv1_params, softmax_params)
@@ -58,14 +60,14 @@ function initialize{T<:Real, U<:Real, V<:Real}(
     return (m, ve)
 end
 
-function initialize{T<:Real, U<:Real, V<:Real}(
+function initialize{T<:Real}(
     input::Array{T, 4},
     conv1_params::ConvolutionLayerParameters,
     fc1_params::MatrixMultiplicationParameters,
     softmax_params::MatrixMultiplicationParameters,
     target_label::Int,
-    margin::U,
-    perturbation_warm_start::Array{V, 4}
+    margin::Real,
+    perturbation_warm_start::Union{Void, Array} = nothing
     )::Tuple{JuMP.Model, Array{JuMP.Variable}}
 
     predicted_label = predict_label(input, conv1_params, fc1_params, softmax_params)
@@ -80,7 +82,7 @@ function initialize{T<:Real, U<:Real, V<:Real}(
     return(m, ve)
 end
 
-function initialize{T<:Real, U<:Real}(
+function initialize{T<:Real}(
     input::Array{T, 4},
     conv1_params::ConvolutionLayerParameters,
     conv2_params::ConvolutionLayerParameters,
@@ -88,7 +90,7 @@ function initialize{T<:Real, U<:Real}(
     softmax_params::MatrixMultiplicationParameters,
     target_label::Int,
     margin::Real,
-    perturbation_warm_start::Array{U, 4}
+    perturbation_warm_start::Union{Void, Array} = nothing
     )::Tuple{JuMP.Model, Array{JuMP.Variable}}
 
     predicted_label = predict_label(input, conv1_params, conv2_params, fc1_params, softmax_params)
@@ -104,14 +106,14 @@ function initialize{T<:Real, U<:Real}(
     return(m, ve)
 end
 
-function initialize{T<:Real, U<:Real}(
+function initialize{T<:Real}(
     input::Array{T, 4},
     fc1_params::MatrixMultiplicationParameters,
     fc2_params::MatrixMultiplicationParameters,
     softmax_params::MatrixMultiplicationParameters,
     target_label::Int,
     margin::Real,
-    perturbation_warm_start::Array{U, 4}
+    perturbation_warm_start::Union{Void, Array} = nothing
     )::Tuple{JuMP.Model, Array{JuMP.Variable}}
 
     predicted_label = predict_label(input, fc1_params, fc2_params, softmax_params)
