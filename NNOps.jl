@@ -11,8 +11,6 @@ using Gurobi
 
 using NNParameters
 
-# export conv2d, relu, maxpool, avgpool, convlayer, conv2dconstraint, reluconstraint, maxpoolconstraint, convlayerconstraint, matmulconstraint, fullyconnectedlayerconstraint, fullyconnectedlayer, softmaxconstraint, softmaxindex, flatten, abs_ge, abs_le, convlayer_forwardprop, convlayer_backprop, fclayer_forwardprop, fclayer_backprop
-
 """
 For a convolution of `filter` on `input`, determines the size of the output.
 
@@ -319,38 +317,42 @@ function convlayerconstraint{T<:JuMP.AbstractJuMPScalar}(
     return x_relu
 end
 
+function matmul{T<:Real}(x::AbstractArray{T, 1}, params::MatrixMultiplicationParameters)
+    return params.matrix*x .+ params.bias
+end
+
 function matmulconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::AbstractArray{T, 1}, params::MatrixMultiplicationParameters)
     return params.matrix*x .+ params.bias
 end
 
-function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::AbstractArray{T, 1}, params::MatrixMultiplicationParameters)::Array{JuMP.Variable, 1}
-    return reluconstraint(model, matmulconstraint(model, x, params))
+function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::AbstractArray{T, 1}, params::FullyConnectedLayerParameters)::Array{JuMP.Variable, 1}
+    return reluconstraint(model, matmulconstraint(model, x, params.mmparams))
 end
 
 function fullyconnectedlayer{T<:Real}(
     x::AbstractArray{T, 1},
-    params::MatrixMultiplicationParameters)
-    return relu(params.matrix*x + params.bias)
+    params::FullyConnectedLayerParameters)
+    return relu(matmul(x, params.mmparams))
 end
+
+# function softmaxconstraint{T<:JuMP.AbstractJuMPScalar}(
+#     model::JuMP.Model,
+#     x::AbstractArray{T, 1},
+#     params::SoftmaxParameters,
+#     target_index::Integer)
+#     # TODO: error checking on target index if out of bounds
+#     x_matmul = matmulconstraint(model, x, params.mmparams)
+#     @constraint(model, x_matmul - x_matmul[target_index].<= 0)
+# end
 
 function softmaxconstraint{T<:JuMP.AbstractJuMPScalar}(
     model::JuMP.Model,
     x::AbstractArray{T, 1},
-    params::MatrixMultiplicationParameters,
-    target_index::Integer)
-    # TODO: error checking on target index if out of bounds
-    x_matmul = matmulconstraint(model, x, params)
-    @constraint(model, x_matmul - x_matmul[target_index].<= 0)
-end
-
-function softmaxconstraint{T<:JuMP.AbstractJuMPScalar}(
-    model::JuMP.Model,
-    x::AbstractArray{T, 1},
-    params::MatrixMultiplicationParameters,
+    params::SoftmaxParameters,
     target_index::Integer,
-    tol::Float64)
+    tol::Float64 = 0)
     # TODO: error checking on target index
-    x_matmul = matmulconstraint(model, x, params)
+    x_matmul = matmulconstraint(model, x, params.mmparams)
     for i in 1:size(x_matmul)[1]
         if (i != target_index)
             @constraint(model, x_matmul[i] - x_matmul[target_index]<= tol)
@@ -360,8 +362,8 @@ end
 
 function softmaxindex{T<:Real}(
     x::AbstractArray{T, 1},
-    params::MatrixMultiplicationParameters)::Integer
-    return findmax(params.matrix*x + params.bias)[2]
+    params::SoftmaxParameters)::Integer
+    return findmax(matmul(x, params.mmparams))[2]
 end
 
 """
@@ -424,7 +426,7 @@ end
 
 function layer{T<:Real}(
     input::AbstractArray{T, 1},
-    params::MatrixMultiplicationParameters)
+    params::FullyConnectedLayerParameters)
     return fullyconnectedlayer(input, params)
 end
 
@@ -438,7 +440,7 @@ end
 function layerconstraint{T<:JuMP.AbstractJuMPScalar}(
     model::JuMP.Model,
     input::AbstractArray{T, 1},
-    params::MatrixMultiplicationParameters)
+    params::FullyConnectedLayerParameters)
     return fullyconnectedlayerconstraint(model, input, params)
 end
 

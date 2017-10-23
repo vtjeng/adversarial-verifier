@@ -43,7 +43,7 @@ end
 function initialize{T<:Real}(
     input::Array{T, 4},
     conv1_params::ConvolutionLayerParameters,
-    softmax_params::MatrixMultiplicationParameters,
+    softmax_params::SoftmaxParameters,
     target_label::Int,
     margin::Real,
     perturbation_warm_start::Union{Void, Array} = nothing
@@ -63,8 +63,8 @@ end
 function initialize{T<:Real}(
     input::Array{T, 4},
     conv1_params::ConvolutionLayerParameters,
-    fc1_params::MatrixMultiplicationParameters,
-    softmax_params::MatrixMultiplicationParameters,
+    fc1_params::FullyConnectedLayerParameters,
+    softmax_params::SoftmaxParameters,
     target_label::Int,
     margin::Real,
     perturbation_warm_start::Union{Void, Array} = nothing
@@ -86,8 +86,8 @@ function initialize{T<:Real}(
     input::Array{T, 4},
     conv1_params::ConvolutionLayerParameters,
     conv2_params::ConvolutionLayerParameters,
-    fc1_params::MatrixMultiplicationParameters,
-    softmax_params::MatrixMultiplicationParameters,
+    fc1_params::FullyConnectedLayerParameters,
+    softmax_params::SoftmaxParameters,
     target_label::Int,
     margin::Real,
     perturbation_warm_start::Union{Void, Array} = nothing
@@ -108,9 +108,9 @@ end
 
 function initialize{T<:Real}(
     input::Array{T, 4},
-    fc1_params::MatrixMultiplicationParameters,
-    fc2_params::MatrixMultiplicationParameters,
-    softmax_params::MatrixMultiplicationParameters,
+    fc1_params::FullyConnectedLayerParameters,
+    fc2_params::FullyConnectedLayerParameters,
+    softmax_params::SoftmaxParameters,
     target_label::Int,
     margin::Real,
     perturbation_warm_start::Union{Void, Array} = nothing

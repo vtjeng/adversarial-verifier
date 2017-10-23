@@ -33,9 +33,9 @@ test_index = 2 # which test sample we're choosing
 x0 = get_input(x_, test_index)
 actual_label = get_label(y_, test_index)
 
-fc1params = get_matrix_params(param_dict, "fc1", (A_height, A_width))
-fc2params = get_matrix_params(param_dict, "fc2", (B_height, B_width))
-softmaxparams = get_matrix_params(param_dict, "logits", (C_height, C_width))
+fc1params = get_matrix_params(param_dict, "fc1", (A_height, A_width)) |> FullyConnectedLayerParameters
+fc2params = get_matrix_params(param_dict, "fc2", (B_height, B_width)) |> FullyConnectedLayerParameters
+softmaxparams = get_matrix_params(param_dict, "logits", (C_height, C_width)) |> SoftmaxParameters
 
 for target_label in 1:10
     (m, ve) = NNExamples.initialize(

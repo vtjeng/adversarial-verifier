@@ -12,7 +12,7 @@ export predict_label
 function predict_label{T<:Real}(
     input::Array{T, 4},
     conv1_params::ConvolutionLayerParameters,
-    softmax_params::MatrixMultiplicationParameters
+    softmax_params::SoftmaxParameters
     )::Int
     x1 = NNOps.convlayer(input, conv1_params)
     x2 = NNOps.flatten(x1)
@@ -23,8 +23,8 @@ end
 function predict_label{T<:Real}(
     input::Array{T, 4},
     conv1_params::ConvolutionLayerParameters,
-    fc1_params::MatrixMultiplicationParameters,
-    softmax_params::MatrixMultiplicationParameters,
+    fc1_params::FullyConnectedLayerParameters,
+    softmax_params::SoftmaxParameters,
     )::Int
     x1 = NNOps.convlayer(input, conv1_params)
     x2 = NNOps.flatten(x1)
@@ -37,8 +37,8 @@ function predict_label{T<:Real}(
     input::Array{T, 4},
     conv1_params::ConvolutionLayerParameters,
     conv2_params::ConvolutionLayerParameters,
-    fc1_params::MatrixMultiplicationParameters,
-    softmax_params::MatrixMultiplicationParameters
+    fc1_params::FullyConnectedLayerParameters,
+    softmax_params::SoftmaxParameters
     )::Int
     x1 = NNOps.convlayer(input, conv1_params)
     x2 = NNOps.convlayer(x1, conv2_params)
@@ -50,9 +50,9 @@ end
 
 function predict_label{T<:Real}(
     input::Array{T, 4},
-    fc1_params::MatrixMultiplicationParameters,
-    fc2_params::MatrixMultiplicationParameters,
-    softmax_params::MatrixMultiplicationParameters,    
+    fc1_params::FullyConnectedLayerParameters,
+    fc2_params::FullyConnectedLayerParameters,
+    softmax_params::SoftmaxParameters,    
     )::Int
     x1 = NNOps.flatten(input)
     x2 = NNOps.fullyconnectedlayer(x1, fc1_params)

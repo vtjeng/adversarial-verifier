@@ -38,12 +38,12 @@ conv1params = NNParameters.ConvolutionLayerParameters(
     strides1
 )
 
-fc1params = NNParameters.MatrixMultiplicationParameters(
+fc1params = NNParameters.FullyConnectedLayerParameters(
     rand(-10:10, A_height, A_width),
     rand(-10:10, A_height)
 )
 
-softmaxparams = NNParameters.MatrixMultiplicationParameters(
+softmaxparams = NNParameters.SoftmaxParameters(
     rand(B_height, B_width)*2-1,
     rand(B_height)*2-1
 )

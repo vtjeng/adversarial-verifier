@@ -1,6 +1,6 @@
 module NNParameters
 
-export Conv2DParameters, PoolParameters, ConvolutionLayerParameters, MatrixMultiplicationParameters
+export Conv2DParameters, PoolParameters, ConvolutionLayerParameters, MatrixMultiplicationParameters, SoftmaxParameters, FullyConnectedLayerParameters
 
 abstract type LayerParameters end
 
@@ -50,6 +50,22 @@ end
 
 function MatrixMultiplicationParameters(matrix::Array{T, 2}, bias::Array{U, 1}) where {T<:Real, U<:Real}
     MatrixMultiplicationParameters{T, U}(matrix, bias)
+end
+
+struct SoftmaxParameters{T<:Real, U<:Real} <: LayerParameters
+    mmparams::MatrixMultiplicationParameters{T, U}
+end
+
+function SoftmaxParameters(matrix::Array{T, 2}, bias::Array{U, 1}) where {T<:Real, U<:Real}
+    SoftmaxParameters(MatrixMultiplicationParameters(matrix, bias))
+end
+
+struct FullyConnectedLayerParameters{T<:Real, U<:Real} <: LayerParameters
+    mmparams::MatrixMultiplicationParameters{T, U}
+end
+
+function FullyConnectedLayerParameters(matrix::Array{T, 2}, bias::Array{U, 1}) where {T<:Real, U<:Real}
+    FullyConnectedLayerParameters(MatrixMultiplicationParameters(matrix, bias))
 end
 
 end

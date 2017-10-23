@@ -63,8 +63,8 @@ conv2params = ConvolutionLayerParameters(
     PoolParameters(strides2)
     )
 
-fc1params = get_matrix_params(param_dict, "fc1", (A_height, A_width))
-softmaxparams = get_matrix_params(param_dict, "logits", (B_height, B_width))
+fc1params = get_matrix_params(param_dict, "fc1", (A_height, A_width)) |> FullyConnectedLayerParameters
+softmaxparams = get_matrix_params(param_dict, "logits", (B_height, B_width)) |> SoftmaxParameters
 
 check_size(x0, (batch, in1_height, in1_width, in1_channels))
 
