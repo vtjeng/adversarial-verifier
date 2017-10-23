@@ -188,7 +188,6 @@ Imposes a 2d convolution constraint between `x` and `x_conv` as determined by
 the filters.
 """
 function conv2dconstraint{T<:JuMP.AbstractJuMPScalar}(
-    model::JuMP.Model,
     x::AbstractArray{T, 4},
     params::Conv2DParameters)
     return conv2d(x, params)
@@ -204,22 +203,12 @@ Note that `x` and `x_rect` must be arrays of the same size.
 
 """
 function reluconstraint{T<:JuMP.AbstractJuMPScalar, N}(
-    model::JuMP.Model,
     xs::AbstractArray{T, N})::Array{JuMP.Variable, N}
-    return map(x -> reluconstraint(model, x), xs)
+    return map(reluconstraint, xs)
 end
 
-function reluconstraint_cj{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::JuMP.Variable
-    x_rect = @switch(
-        (x <= 0) => 0,
-        (x >= 0) => x
-    )
-    setlowerbound(x_rect, 0) # we're smart, so we strengthen the lowerbound.
-    # we expect the upperbound to be taken care of.
-    return x_rect
-end
-
-function reluconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::JuMP.Variable
+function reluconstraint{T<:JuMP.AbstractJuMPScalar}(x::T)::JuMP.Variable
+    model = ConditionalJuMP.getmodel(x)
     x_rect = @variable(model)
     u = upperbound(x)
     l = lowerbound(x)
@@ -272,27 +261,28 @@ Note that `x` and `x_pooled` must have sizes that match according to `strides`.
 TODO: finish up documentation
 """
 function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(
-    model::JuMP.Model,
     xs::AbstractArray{T, 4},
     params::PoolParameters{4})
     return poolmap(
-        (x) -> NNOps.maximum(model, x[:]),
+        (x) -> NNOps.maximum(x[:]),
         xs,
         params.strides
     )
 end
 
-function maximum_with_relu{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 1})::JuMP.GenericAffExpr
+function maximum_with_relu{T<:JuMP.AbstractJuMPScalar}(xs::AbstractArray{T, 1})::JuMP.GenericAffExpr
     if length(xs) == 1
         return xs[1]
     else
         a = xs[1]
-        b = length(xs) == 2 ? xs[2] : NNOps.maximum(model, xs[2:end])
-        return reluconstraint(model, a-b) + b
+        b = length(xs) == 2 ? xs[2] : NNOps.maximum(xs[2:end])
+        return reluconstraint(a-b) + b
     end
 end
 
-function maximum{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 1})::JuMP.Variable
+function maximum{T<:JuMP.AbstractJuMPScalar}(xs::AbstractArray{T, 1})::JuMP.Variable
+    @assert length(xs) >= 1
+    model = ConditionalJuMP.getmodel(xs[1])
     x_max = @variable(model,
         lowerbound = Base.maximum(map(lowerbound, xs)),
         upperbound = Base.maximum(map(upperbound, xs)))
@@ -308,12 +298,11 @@ function maximum{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArra
 end
 
 function convlayerconstraint{T<:JuMP.AbstractJuMPScalar}(
-    model::JuMP.Model,
     x::AbstractArray{T, 4},
     params::ConvolutionLayerParameters)::Array{JuMP.Variable, 4}
-    x_conv = conv2dconstraint(model, x, params.conv2dparams)
-    x_maxpool = maxpoolconstraint(model, x_conv, params.maxpoolparams)
-    x_relu = reluconstraint(model, x_maxpool)
+    x_conv = conv2dconstraint(x, params.conv2dparams)
+    x_maxpool = maxpoolconstraint(x_conv, params.maxpoolparams)
+    x_relu = reluconstraint(x_maxpool)
     return x_relu
 end
 
@@ -321,12 +310,12 @@ function matmul{T<:Real}(x::AbstractArray{T, 1}, params::MatrixMultiplicationPar
     return params.matrix*x .+ params.bias
 end
 
-function matmulconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::AbstractArray{T, 1}, params::MatrixMultiplicationParameters)
+function matmulconstraint{T<:JuMP.AbstractJuMPScalar}(x::AbstractArray{T, 1}, params::MatrixMultiplicationParameters)
     return params.matrix*x .+ params.bias
 end
 
-function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::AbstractArray{T, 1}, params::FullyConnectedLayerParameters)::Array{JuMP.Variable, 1}
-    return reluconstraint(model, matmulconstraint(model, x, params.mmparams))
+function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar}(x::AbstractArray{T, 1}, params::FullyConnectedLayerParameters)::Array{JuMP.Variable, 1}
+    return reluconstraint(matmulconstraint(x, params.mmparams))
 end
 
 function fullyconnectedlayer{T<:Real}(
@@ -346,13 +335,15 @@ end
 # end
 
 function softmaxconstraint{T<:JuMP.AbstractJuMPScalar}(
-    model::JuMP.Model,
     x::AbstractArray{T, 1},
     params::SoftmaxParameters,
     target_index::Integer,
     tol::Float64 = 0)
+    @assert length(x) >= 1
+    @assert (target_index >= 1) && (target_index <= length(x))
+    model = ConditionalJuMP.getmodel(x[1])
     # TODO: error checking on target index
-    x_matmul = matmulconstraint(model, x, params.mmparams)
+    x_matmul = matmulconstraint(x, params.mmparams)
     for i in 1:size(x_matmul)[1]
         if (i != target_index)
             @constraint(model, x_matmul[i] - x_matmul[target_index]<= tol)
@@ -373,7 +364,8 @@ function flatten{T, N}(x::AbstractArray{T, N})
     return permutedims(x, N:-1:1)[:]
 end
 
-function abs_ge(model::JuMP.Model, x::JuMP.AbstractJuMPScalar)::JuMP.Variable
+function abs_ge(x::JuMP.AbstractJuMPScalar)::JuMP.Variable
+    model = ConditionalJuMP.getmodel(x)
     x_abs = @variable(model)
     u = upperbound(x)
     l = lowerbound(x)
@@ -394,7 +386,8 @@ function abs_ge(model::JuMP.Model, x::JuMP.AbstractJuMPScalar)::JuMP.Variable
     return x_abs
 end
 
-function abs_le(model::JuMP.Model, x::JuMP.AbstractJuMPScalar)::JuMP.Variable
+function abs_le(x::JuMP.AbstractJuMPScalar)::JuMP.Variable
+    model = ConditionalJuMP.getmodel(x)
     x_abs = @variable(model)
     u = upperbound(x)
     l = lowerbound(x)
@@ -431,17 +424,15 @@ function layer{T<:Real}(
 end
 
 function layerconstraint{T<:JuMP.AbstractJuMPScalar}(
-    model::JuMP.Model,
     input::AbstractArray{T, 4},
     params::ConvolutionLayerParameters)
-    return convlayerconstraint(model, input, params)
+    return convlayerconstraint(input, params)
 end
 
 function layerconstraint{T<:JuMP.AbstractJuMPScalar}(
-    model::JuMP.Model,
     input::AbstractArray{T, 1},
     params::FullyConnectedLayerParameters)
-    return fullyconnectedlayerconstraint(model, input, params)
+    return fullyconnectedlayerconstraint(input, params)
 end
 
 
@@ -467,7 +458,7 @@ function prop{T<:Real, U<:Real, V<:Real}(
     @constraint(m, vx0 .== input + ve)
 
     conv_input = layer(input, params)
-    vx1 = layerconstraint(m, vx0, params)
+    vx1 = layerconstraint(vx0, params)
     dvx1_abs = abs_le.(m, vx1-conv_input)
 
     input_perturbation_norm = sum(ve_abs)

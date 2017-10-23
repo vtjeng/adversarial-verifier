@@ -111,7 +111,7 @@ println("Number correct on regular samples is $num_correct out of $num_samples."
     conv1params, conv2params, fc1params, softmaxparams,
     target_label, 0.0, candidate_adversarial_example - x0)
 
-abs_ve = NNOps.abs_ge.(m, ve)
+abs_ve = NNOps.abs_ge.(ve)
 e_norm = sum(abs_ve)
           
 @objective(m, Min, e_norm)

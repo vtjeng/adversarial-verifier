@@ -52,7 +52,7 @@ input = rand(batch, in_height, in_width, in_channels)
 
 (m, ve) = NNExamples.initialize(input, conv1params, x1, x0-input)
 
-abs_ve = NNOps.abs_ge.(m, ve)
+abs_ve = NNOps.abs_ge.(ve)
 e_norm = sum(abs_ve)
 # @constraint(m, e_norm <= 18)
 

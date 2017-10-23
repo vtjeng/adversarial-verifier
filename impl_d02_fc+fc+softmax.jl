@@ -42,7 +42,7 @@ for target_label in 1:10
         x0,
         fc1params, fc2params, softmaxparams,
         target_label, 0.0)
-    abs_ve = NNOps.abs_ge.(m, ve)
+    abs_ve = NNOps.abs_ge.(ve)
     e_norm = sum(abs_ve)
     # e_norm = sum(ve.^2)
           

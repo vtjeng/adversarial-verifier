@@ -45,7 +45,7 @@ softmaxparams = NNParameters.SoftmaxParameters(
     conv1params, softmaxparams,
     3, -1.0)    
 
-abs_ve = NNOps.abs_ge.(m, ve)
+abs_ve = NNOps.abs_ge.(ve)
 e_norm = sum(abs_ve)
    
 @objective(m, Min, e_norm)
