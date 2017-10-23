@@ -21,8 +21,8 @@ convparams = NNParameters.ConvolutionLayerParameters(
 )
 
 # get input
-mnist_test_data_resized = matread("data/mnist_test_data_resized.mat")
-x_resize = mnist_test_data_resized["x_resize"]
+mnist_test_data = matread("data/mnist_test_data.mat")
+x_resize = mnist_test_data["x14_"]
 test_index = 2
 input = get_input(x_resize, test_index)
 

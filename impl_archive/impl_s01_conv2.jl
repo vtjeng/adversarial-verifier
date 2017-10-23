@@ -20,8 +20,8 @@ bias2 = squeeze(nn_params["conv2/bias"], 1)
 strides2 = (1, 1, 1, 1) # TODO: special case for pool size of 1
 k_in2 = 2
 
-mnist_test_data_resized = matread("data/mnist_test_data_resized.mat")
-x_resize = mnist_test_data_resized["x_resize"]
+mnist_test_data = matread("data/mnist_test_data.mat")
+x_resize = mnist_test_data["x14_"]
 test_index = 2
 input = get_input(x_resize, test_index)
 x1 = NNOps.convlayer(input, filter1, bias1, strides1)

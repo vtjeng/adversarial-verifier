@@ -26,8 +26,8 @@ C_width = B_height
 
 UUID = "2017-10-09_201838"
 param_dict = matread("data/$UUID-ch-params.mat")
-x_ = matread("data/$UUID-adversarial-examples.mat")["x"]
-y_ = matread("data/mnist_test_data_resized.mat")["y_"]
+x_ = matread("data/mnist_test_data.mat")["x_"]
+y_ = matread("data/mnist_test_data.mat")["y_"]
 test_index = 2 # which test sample we're choosing
 
 x0 = get_input(x_, test_index)
@@ -37,13 +37,14 @@ fc1params = get_matrix_params(param_dict, "fc1", (A_height, A_width))
 fc2params = get_matrix_params(param_dict, "fc2", (B_height, B_width))
 softmaxparams = get_matrix_params(param_dict, "logits", (C_height, C_width))
 
-for target_label in 1:1
+for target_label in 1:10
     (m, ve) = NNExamples.initialize(
         x0,
         fc1params, fc2params, softmaxparams,
-        target_label, 0.0, map(_ -> 0.0, x0))
+        target_label, 0.0)
     abs_ve = NNOps.abs_ge.(m, ve)
     e_norm = sum(abs_ve)
+    # e_norm = sum(ve.^2)
           
     @objective(m, Min, e_norm)
         

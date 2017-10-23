@@ -46,10 +46,10 @@ B_width = A_height
 UUID = "2017-09-28_181157"
 param_dict = matread("data/$UUID-ch-params.mat")
 x_adv = matread("data/$UUID-adversarial-examples.mat")["adv_x"]
-mnist_test_data_resized = matread("data/mnist_test_data_resized.mat")
+mnist_test_data = matread("data/mnist_test_data.mat")
 test_index = 2 # which test sample we're choosing
-y_ = mnist_test_data_resized["y_"]
-x_resize = mnist_test_data_resized["x_resize"]
+y_ = mnist_test_data["y_"]
+x_resize = mnist_test_data["x14_"]
 actual_label = get_label(y_, test_index)
 x0 = get_input(x_resize, test_index)
 

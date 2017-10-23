@@ -52,9 +52,9 @@ B_width = A_height
 UUID = "2017-09-28_181157"
 param_dict = matread("data/$UUID-ch-params.mat")
 x_adv = matread("data/$UUID-adversarial-examples.mat")["adv_x"]
-mnist_test_data_resized = matread("data/mnist_test_data_resized.mat")
-y_ = mnist_test_data_resized["y_"]
-x_resize = mnist_test_data_resized["x_resize"]
+mnist_test_data = matread("data/mnist_test_data.mat")
+y_ = mnist_test_data["y_"]
+x_resize = mnist_test_data["x14_"]
 
 conv1params = ConvolutionLayerParameters(
     get_conv_params(param_dict, "conv1", (filter1_height, filter1_width, in1_channels, out1_channels)),
