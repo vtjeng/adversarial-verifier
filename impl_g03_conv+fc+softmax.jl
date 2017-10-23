@@ -29,7 +29,6 @@ A_width = pooled1_height*pooled1_width*out1_channels
 B_height = 3
 B_width = A_height
 
-### Choosing data to be used
 srand(5)
 x0 = rand(batch, in1_height, in1_width, in1_channels)
 
@@ -49,7 +48,14 @@ softmaxparams = NNParameters.MatrixMultiplicationParameters(
     rand(B_height)*2-1
 )
 
-NNExamples.solve_conv_fc_softmax(
+(m, ve) = NNExamples.initialize(
     x0,
     conv1params, fc1params, softmaxparams,
     3, -1.0, map(_ -> 0.0, x0))
+
+abs_ve = NNOps.abs_ge.(m, ve)
+e_norm = sum(abs_ve)
+       
+@objective(m, Min, e_norm)
+       
+status = solve(m)

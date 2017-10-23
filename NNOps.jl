@@ -160,7 +160,7 @@ end
 For pooling operations on an array, returns a view of the parent array
 corresponding to the `output_index` in the output array.
 """
-function getpoolview{T<:Any, N}(input_array::AbstractArray{T, N}, strides::NTuple{N, Int}, output_index::NTuple{N, Int})::SubArray{T, N}
+function getpoolview{T, N}(input_array::AbstractArray{T, N}, strides::NTuple{N, Int}, output_index::NTuple{N, Int})::SubArray{T, N}
     it = zip(size(input_array), strides, output_index)
     input_index_range = map((x)-> getsliceindex(x...), it)
     return view(input_array, input_index_range...)
@@ -170,7 +170,7 @@ end
 For pooling operations on an array, returns the expected size of the output
 array.
 """
-function getoutputsize{T<:Any, N}(input_array::AbstractArray{T, N}, strides::NTuple{N, Int})::NTuple{N, Int}
+function getoutputsize{T, N}(input_array::AbstractArray{T, N}, strides::NTuple{N, Int})::NTuple{N, Int}
     output_size = ((x, y) -> round(Int, x/y, RoundUp)).(size(input_array), strides)
     return output_size
 end
@@ -179,7 +179,7 @@ end
 Returns output from applying `f` to subarrays of `input_array`, with the windows
 determined by the `strides`.
 """
-function poolmap{T<:Any, N}(f::Function, input_array::AbstractArray{T, N}, strides::NTuple{N, Int})
+function poolmap{T, N}(f::Function, input_array::AbstractArray{T, N}, strides::NTuple{N, Int})
     output_size = getoutputsize(input_array, strides)
     output_indices = collect(CartesianRange(output_size))
     return ((I) -> f(getpoolview(input_array, strides, I.I))).(output_indices)
@@ -246,6 +246,9 @@ function reluconstraint{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, x::T)::Ju
         @constraint(model, x_rect <= u*a)
         @constraint(model, x_rect >= 0)
 
+        # model.ext[:objective] = get(model.ext, :objective, 0) + x_rect - x
+        model.ext[:objective] = get(model.ext, :objective, 0) + x_rect - x*u/(u-l)
+
         # Manually set the bounds for x_rect so they can be used by downstream operations.
         setlowerbound(x_rect, 0)
         setupperbound(x_rect, u)
@@ -273,7 +276,7 @@ TODO: finish up documentation
 function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(
     model::JuMP.Model,
     xs::AbstractArray{T, 4},
-    params::PoolParameters{4})::Array{JuMP.Variable, 4}
+    params::PoolParameters{4})
     return poolmap(
         (x) -> NNOps.maximum(model, x[:]),
         xs,
@@ -281,7 +284,17 @@ function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(
     )
 end
 
-function maximum{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 1})
+function maximum_with_relu{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 1})::JuMP.GenericAffExpr
+    if length(xs) == 1
+        return xs[1]
+    else
+        a = xs[1]
+        b = length(xs) == 2 ? xs[2] : NNOps.maximum(model, xs[2:end])
+        return reluconstraint(model, a-b) + b
+    end
+end
+
+function maximum{T<:JuMP.AbstractJuMPScalar}(model::JuMP.Model, xs::AbstractArray{T, 1})::JuMP.Variable
     x_max = @variable(model,
         lowerbound = Base.maximum(map(lowerbound, xs)),
         upperbound = Base.maximum(map(upperbound, xs)))

@@ -67,7 +67,14 @@ softmaxparams = NNParameters.MatrixMultiplicationParameters(
     rand(B_height)*2-1
 )
 
-NNExamples.solve_conv_conv_fc_softmax(
+(m, ve) = NNExamples.initialize(
     x0,
     conv1params, conv2params, fc1params, softmaxparams,
     2, -1.0, map(_ -> 0.0, x0))
+
+abs_ve = NNOps.abs_ge.(m, ve)
+e_norm = sum(abs_ve)
+       
+@objective(m, Min, e_norm)
+       
+status = solve(m)

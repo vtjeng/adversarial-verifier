@@ -4,7 +4,6 @@ end
 
 using MAT
 using JuMP
-using Gurobi
 
 using NNExamples
 using NNParameters
@@ -39,8 +38,14 @@ fc2params = get_matrix_params(param_dict, "fc2", (B_height, B_width))
 softmaxparams = get_matrix_params(param_dict, "logits", (C_height, C_width))
 
 for target_label in 1:1
-    NNExamples.solve_fc_fc_softmax(
+    (m, ve) = NNExamples.initialize(
         x0,
         fc1params, fc2params, softmaxparams,
         target_label, 0.0, map(_ -> 0.0, x0))
+    abs_ve = NNOps.abs_ge.(m, ve)
+    e_norm = sum(abs_ve)
+          
+    @objective(m, Min, e_norm)
+        
+    status = solve(m)
 end

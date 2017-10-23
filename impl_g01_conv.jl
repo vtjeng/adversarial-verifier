@@ -3,7 +3,8 @@ if !(pwd() in LOAD_PATH)
 end
 
 using JuMP
-using Gurobi
+
+using Revise
 
 using NNExamples
 using NNOps
@@ -49,4 +50,13 @@ x1 = NNOps.convlayer(x0, conv1params)
 
 input = rand(batch, in_height, in_width, in_channels)
 
-NNExamples.solve_conv(input, conv1params, x1, x0 - input)
+(m, ve) = NNExamples.initialize(input, conv1params, x1, x0-input)
+
+abs_ve = NNOps.abs_ge.(m, ve)
+e_norm = sum(abs_ve)
+# @constraint(m, e_norm <= 18)
+
+@objective(m, Min, e_norm)
+# @objective(m, Min, m.ext[:objective])
+
+status = solve(m)
