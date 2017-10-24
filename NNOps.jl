@@ -100,37 +100,6 @@ function increment!{T<:JuMP.Variable, U<:Real}(s::JuMP.AffExpr, input_val::T, fi
 end
 
 """
-Computes the rectification of `x`
-"""
-function relu{T<:Real, N}(input::AbstractArray{T, N})::AbstractArray{T, N}
-    return max.(0, input)
-end
-
-"""
-Computes the result of a max-pooling operation on `input_array` with specified
-`strides`.
-"""
-function maxpool{T<:Real, N}(
-    input::AbstractArray{T, N},
-    params::PoolParameters{N})::AbstractArray{T, N}
-    # NB: Tried to use pooling function from Knet.relu but it had way too many
-    # incompatibilities
-    return poolmap(Base.maximum, input, params.strides)
-end
-
-function avgpool{T<:Real, N}(
-    input::AbstractArray{T, N},
-    params::PoolParameters{N})::AbstractArray{T, N}
-    return poolmap(mean, input, params.strides)
-end
-
-function convlayer{T<:Real}(
-    input::AbstractArray{T, 4},
-    params::ConvolutionLayerParameters)
-    return maxpool(relu(conv2d(input, params.conv2dparams)), params.maxpoolparams)
-end
-
-"""
 For pooling operations on an array where a given element in the output array
 corresponds to equal-sized blocks in the input array, returns (for a given
 dimension) the index range in the input array corresponding to a particular
@@ -184,30 +153,84 @@ function poolmap{T, N}(f::Function, input_array::AbstractArray{T, N}, strides::N
 end
 
 """
-Imposes a 2d convolution constraint between `x` and `x_conv` as determined by
-the filters.
+Computes the result of a max-pooling operation on `input_array` with specified
+`strides`.
 """
-function conv2dconstraint{T<:JuMP.AbstractJuMPScalar}(
-    x::AbstractArray{T, 4},
-    params::Conv2DParameters)
-    return conv2d(x, params)
+function maxpool{T<:Real, N}(
+    input::AbstractArray{T, N},
+    params::PoolParameters{N})::AbstractArray{T, N}
+    # NB: Tried to use pooling function from Knet.relu but it had way too many
+    # incompatibilities
+    return poolmap(Base.maximum, input, params.strides)
+end
+
+function avgpool{T<:Real, N}(
+    input::AbstractArray{T, N},
+    params::PoolParameters{N})::AbstractArray{T, N}
+    return poolmap(mean, input, params.strides)
 end
 
 """
-Imposes a rectified linearity constraint between `x` and `x_rect` using
-the big-M formulation.
+Imposes a max-pooling constraint between `x` and `x_pooled` using the big-M
+formulation.
 
-For `|x| < M`, `x_rect` = `x` if `x` > 0 and 0 otherwise.
+`x` is divided into cells of size `strides`, and each entry of `x_pooled`
+is equal to the maximum value in the corresponding cell.
 
-Note that `x` and `x_rect` must be arrays of the same size.
+If the height (viz. width) of the input array `x` is not an integer multiple
+of the stride along the height (viz. width) as specified in strides, the bottom
+(viz. rightmost) cell's height (viz. width) is truncated, and we select the
+maximum value from the truncated cell.
 
+Note that `x` and `x_pooled` must have sizes that match according to `strides`.
+
+TODO: finish up documentation
 """
-function reluconstraint{T<:JuMP.AbstractJuMPScalar, N}(
-    xs::AbstractArray{T, N})::Array{JuMP.Variable, N}
-    return map(reluconstraint, xs)
+function maxpool{T<:JuMP.AbstractJuMPScalar}(
+    xs::AbstractArray{T, 4},
+    params::PoolParameters{4})
+    return poolmap(
+        (x) -> NNOps.maximum(x[:]),
+        xs,
+        params.strides
+    )
 end
 
-function reluconstraint{T<:JuMP.AbstractJuMPScalar}(x::T)::JuMP.Variable
+function maximum_with_relu{T<:JuMP.AbstractJuMPScalar}(xs::AbstractArray{T, 1})::JuMP.GenericAffExpr
+    if length(xs) == 1
+        return xs[1]
+    else
+        a = xs[1]
+        b = length(xs) == 2 ? xs[2] : NNOps.maximum(xs[2:end])
+        return relu(a-b) + b
+    end
+end
+
+function maximum{T<:JuMP.AbstractJuMPScalar}(xs::AbstractArray{T, 1})::JuMP.Variable
+    @assert length(xs) >= 1
+    model = ConditionalJuMP.getmodel(xs[1])
+    x_max = @variable(model,
+        lowerbound = Base.maximum(map(lowerbound, xs)),
+        upperbound = Base.maximum(map(upperbound, xs)))
+    indicators = []
+    for x in xs
+        a = @variable(model, category =:Bin)
+        @implies(model, a, x_max == x)
+        @implies(model, 1 - a, x_max >= x)
+        push!(indicators, a)
+    end
+    @constraint(model, sum(indicators) == 1)
+    return x_max
+end
+
+"""
+Computes the rectification of `x`
+"""
+function relu(x::Real)::Real
+    return max(0, x)
+end
+
+function relu(x::JuMP.AbstractJuMPScalar)::JuMP.Variable
     model = ConditionalJuMP.getmodel(x)
     x_rect = @variable(model)
     u = upperbound(x)
@@ -244,95 +267,29 @@ function reluconstraint{T<:JuMP.AbstractJuMPScalar}(x::T)::JuMP.Variable
     return x_rect
 end
 
-"""
-Imposes a max-pooling constraint between `x` and `x_pooled` using the big-M
-formulation.
-
-`x` is divided into cells of size `strides`, and each entry of `x_pooled`
-is equal to the maximum value in the corresponding cell.
-
-If the height (viz. width) of the input array `x` is not an integer multiple
-of the stride along the height (viz. width) as specified in strides, the bottom
-(viz. rightmost) cell's height (viz. width) is truncated, and we select the
-maximum value from the truncated cell.
-
-Note that `x` and `x_pooled` must have sizes that match according to `strides`.
-
-TODO: finish up documentation
-"""
-function maxpoolconstraint{T<:JuMP.AbstractJuMPScalar}(
-    xs::AbstractArray{T, 4},
-    params::PoolParameters{4})
-    return poolmap(
-        (x) -> NNOps.maximum(x[:]),
-        xs,
-        params.strides
-    )
-end
-
-function maximum_with_relu{T<:JuMP.AbstractJuMPScalar}(xs::AbstractArray{T, 1})::JuMP.GenericAffExpr
-    if length(xs) == 1
-        return xs[1]
-    else
-        a = xs[1]
-        b = length(xs) == 2 ? xs[2] : NNOps.maximum(xs[2:end])
-        return reluconstraint(a-b) + b
-    end
-end
-
-function maximum{T<:JuMP.AbstractJuMPScalar}(xs::AbstractArray{T, 1})::JuMP.Variable
-    @assert length(xs) >= 1
-    model = ConditionalJuMP.getmodel(xs[1])
-    x_max = @variable(model,
-        lowerbound = Base.maximum(map(lowerbound, xs)),
-        upperbound = Base.maximum(map(upperbound, xs)))
-    indicators = []
-    for x in xs
-        a = @variable(model, category =:Bin)
-        @implies(model, a, x_max == x)
-        @implies(model, 1 - a, x_max >= x)
-        push!(indicators, a)
-    end
-    @constraint(model, sum(indicators) == 1)
-    return x_max
-end
-
-function convlayerconstraint{T<:JuMP.AbstractJuMPScalar}(
+function convlayer{T<:Union{Real, JuMP.AbstractJuMPScalar}}(
     x::AbstractArray{T, 4},
-    params::ConvolutionLayerParameters)::Array{JuMP.Variable, 4}
-    x_conv = conv2dconstraint(x, params.conv2dparams)
-    x_maxpool = maxpoolconstraint(x_conv, params.maxpoolparams)
-    x_relu = reluconstraint(x_maxpool)
+    params::ConvolutionLayerParameters)
+    x_conv = conv2d(x, params.conv2dparams)
+    x_maxpool = maxpool(x_conv, params.maxpoolparams)
+    x_relu = relu.(x_maxpool)
     return x_relu
 end
 
-function matmul{T<:Real}(x::AbstractArray{T, 1}, params::MatrixMultiplicationParameters)
+function matmul{T<:Union{Real, JuMP.AbstractJuMPScalar}}(
+    x::AbstractArray{T, 1}, 
+    params::MatrixMultiplicationParameters)
     return params.matrix*x .+ params.bias
 end
 
-function matmulconstraint{T<:JuMP.AbstractJuMPScalar}(x::AbstractArray{T, 1}, params::MatrixMultiplicationParameters)
-    return params.matrix*x .+ params.bias
-end
-
-function fullyconnectedlayerconstraint{T<:JuMP.AbstractJuMPScalar}(x::AbstractArray{T, 1}, params::FullyConnectedLayerParameters)::Array{JuMP.Variable, 1}
-    return reluconstraint(matmulconstraint(x, params.mmparams))
-end
-
-function fullyconnectedlayer{T<:Real}(
-    x::AbstractArray{T, 1},
+function fullyconnectedlayer{T<:Union{Real, JuMP.AbstractJuMPScalar}}(
+    x::AbstractArray{T, 1}, 
     params::FullyConnectedLayerParameters)
-    return relu(matmul(x, params.mmparams))
+    # TODO: Check with Robin whether I can force type inference here.
+    return relu.(x |> params.mmparams)
 end
 
-# function softmaxconstraint{T<:JuMP.AbstractJuMPScalar}(
-#     model::JuMP.Model,
-#     x::AbstractArray{T, 1},
-#     params::SoftmaxParameters,
-#     target_index::Integer)
-#     # TODO: error checking on target index if out of bounds
-#     x_matmul = matmulconstraint(model, x, params.mmparams)
-#     @constraint(model, x_matmul - x_matmul[target_index].<= 0)
-# end
+(p::MatrixMultiplicationParameters)(x::AbstractArray) = matmul(x, p)
 
 function softmaxconstraint{T<:JuMP.AbstractJuMPScalar}(
     x::AbstractArray{T, 1},
@@ -343,7 +300,7 @@ function softmaxconstraint{T<:JuMP.AbstractJuMPScalar}(
     @assert (target_index >= 1) && (target_index <= length(x))
     model = ConditionalJuMP.getmodel(x[1])
     # TODO: error checking on target index
-    x_matmul = matmulconstraint(x, params.mmparams)
+    x_matmul = matmul(x, params.mmparams)
     for i in 1:size(x_matmul)[1]
         if (i != target_index)
             @constraint(model, x_matmul[i] - x_matmul[target_index]<= tol)
@@ -386,7 +343,7 @@ function abs_ge(x::JuMP.AbstractJuMPScalar)::JuMP.Variable
     return x_abs
 end
 
-function abs_le(x::JuMP.AbstractJuMPScalar)::JuMP.Variable
+function abs_strict(x::JuMP.AbstractJuMPScalar)::JuMP.Variable
     model = ConditionalJuMP.getmodel(x)
     x_abs = @variable(model)
     u = upperbound(x)
@@ -411,30 +368,17 @@ function abs_le(x::JuMP.AbstractJuMPScalar)::JuMP.Variable
     return x_abs
 end
 
-function layer{T<:Real}(
+function layer{T<:Union{Real, JuMP.AbstractJuMPScalar}}(
     input::AbstractArray{T, 4},
     params::ConvolutionLayerParameters)
     return convlayer(input, params)
 end
 
-function layer{T<:Real}(
+function layer{T<:Union{Real, JuMP.AbstractJuMPScalar}}(
     input::AbstractArray{T, 1},
     params::FullyConnectedLayerParameters)
     return fullyconnectedlayer(input, params)
 end
-
-function layerconstraint{T<:JuMP.AbstractJuMPScalar}(
-    input::AbstractArray{T, 4},
-    params::ConvolutionLayerParameters)
-    return convlayerconstraint(input, params)
-end
-
-function layerconstraint{T<:JuMP.AbstractJuMPScalar}(
-    input::AbstractArray{T, 1},
-    params::FullyConnectedLayerParameters)
-    return fullyconnectedlayerconstraint(input, params)
-end
-
 
 function prop{T<:Real, U<:Real, V<:Real}(
     input::AbstractArray{T},
@@ -458,8 +402,8 @@ function prop{T<:Real, U<:Real, V<:Real}(
     @constraint(m, vx0 .== input + ve)
 
     conv_input = layer(input, params)
-    vx1 = layerconstraint(vx0, params)
-    dvx1_abs = abs_le.(m, vx1-conv_input)
+    vx1 = layer(vx0, params)
+    dvx1_abs = abs_strict.(m, vx1-conv_input)
 
     input_perturbation_norm = sum(ve_abs)
     output_perturbation_norm = sum(dvx1_abs)
