@@ -314,6 +314,10 @@ function softmaxindex{T<:Real}(
     return findmax(matmul(x, params.mmparams))[2]
 end
 
+function squish{T<:JuMPReal, U<:Union{ConvolutionLayerParameters, FullyConnectedLayerParameters}}(x::Array{T}, ps::Array{U, 1})
+    return length(ps) == 0 ? x : squish(ps[1](x), ps[2:end])
+end
+
 (p::MatrixMultiplicationParameters){T<:JuMPReal}(x::Array{T, 1}) = matmul(x, p)
 (p::Conv2DParameters){T<:JuMPReal}(x::Array{T, 4}) = conv2d(x, p)
 
@@ -321,6 +325,7 @@ end
 (p::FullyConnectedLayerParameters){T<:JuMPReal}(x::Array{T, 1}) = fullyconnectedlayer(x, p)
 (p::SoftmaxParameters){T<:JuMP.AbstractJuMPScalar}(x::Array{T, 1}, target_index::Integer, tol::Float64 = 0) = softmaxconstraint(x, p, target_index, tol)
 (p::SoftmaxParameters){T<:Real}(x::Array{T, 1}) = softmaxindex(x, p)
+(ps::Array{U, 1}){T<:JuMPReal, U<:Union{ConvolutionLayerParameters, FullyConnectedLayerParameters}}(x::Array{T}) = squish(x, ps)
 
 """
 Permute dimensions of array because Python flattens arrays in the opposite order.

@@ -77,6 +77,25 @@ function initialize{T<:Real}(
     return(m, ve)
 end
 
+function initialize{T<:Real, U<:ConvolutionLayerParameters, V<:FullyConnectedLayerParameters}(
+    input::Array{T, 4},
+    conv_params::Array{U},
+    fc_params::Array{V},
+    softmax_params::SoftmaxParameters,
+    target_label::Int,
+    margin::Real,
+    perturbation_warm_start::Union{Void, Array} = nothing
+    )::Tuple{JuMP.Model, Array{JuMP.Variable}}
+
+    predicted_label = input |> conv_params |> NNOps.flatten |> fc_params |> softmax_params
+    println("Attempting to find adversarial example. Neural net predicted label is $predicted_label, target label is $target_label")
+
+    (m, vx0, ve) = initialize_common(input, perturbation_warm_start)
+    vx0 |> conv_params |> NNOps.flatten |> fc_params |> (x) -> softmax_params(x, target_label, margin)
+
+    return(m, ve)
+end
+
 function initialize{T<:Real}(
     input::Array{T, 4},
     conv1_params::ConvolutionLayerParameters,
@@ -92,7 +111,7 @@ function initialize{T<:Real}(
     println("Attempting to find adversarial example. Neural net predicted label is $predicted_label, target label is $target_label")
 
     (m, vx0, ve) = initialize_common(input, perturbation_warm_start)
-    vx0 |> conv1_params |> conv2_params |> NNOps.flatten |> fc1_params |> (x) -> softmax_params(x, target_label, margin)
+    vx0 |> (x) -> squish(x, [conv1_params, conv2_params]) |> NNOps.flatten |> fc1_params |> (x) -> softmax_params(x, target_label, margin)
 
     return(m, ve)
 end

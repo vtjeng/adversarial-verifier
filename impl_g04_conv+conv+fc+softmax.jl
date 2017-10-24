@@ -69,7 +69,7 @@ softmaxparams = NNParameters.SoftmaxParameters(
 
 (m, ve) = NNExamples.initialize(
     x0,
-    conv1params, conv2params, fc1params, softmaxparams,
+    [conv1params, conv2params], [fc1params], softmaxparams,
     2, -1.0)
 
 abs_ve = NNOps.abs_ge.(ve)
