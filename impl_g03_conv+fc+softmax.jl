@@ -32,26 +32,27 @@ B_width = A_height
 srand(5)
 x0 = rand(batch, in1_height, in1_width, in1_channels)
 
-conv1params = NNParameters.ConvolutionLayerParameters(
+conv1params = ConvolutionLayerParameters(
     rand(filter1_height, filter1_width, in1_channels, out1_channels)*2-1,
     rand(out1_channels)*2-1,
     strides1
 )
 
-fc1params = NNParameters.FullyConnectedLayerParameters(
+fc1params = FullyConnectedLayerParameters(
     rand(-10:10, A_height, A_width),
     rand(-10:10, A_height)
 )
 
-softmaxparams = NNParameters.SoftmaxParameters(
+softmaxparams = SoftmaxParameters(
     rand(B_height, B_width)*2-1,
     rand(B_height)*2-1
 )
 
-(m, ve) = NNExamples.initialize(
-    x0,
-    conv1params, fc1params, softmaxparams,
-    3, -1.0)
+nnparams = StandardNeuralNetParameters(
+    [conv1params], [fc1params], softmaxparams
+)
+
+(m, ve) = NNExamples.initialize(x0, nnparams, 3, -1.0)
 
 abs_ve = NNOps.abs_ge.(ve)
 e_norm = sum(abs_ve)

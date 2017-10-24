@@ -37,11 +37,10 @@ fc1params = get_matrix_params(param_dict, "fc1", (A_height, A_width)) |> FullyCo
 fc2params = get_matrix_params(param_dict, "fc2", (B_height, B_width)) |> FullyConnectedLayerParameters
 softmaxparams = get_matrix_params(param_dict, "logits", (C_height, C_width)) |> SoftmaxParameters
 
+nnparams = StandardNeuralNetParameters(ConvolutionLayerParameters[], [fc1params, fc2params], softmaxparams)
+
 for target_label in 1:10
-    (m, ve) = NNExamples.initialize(
-        x0,
-        fc1params, fc2params, softmaxparams,
-        target_label, 0.0)
+    (m, ve) = NNExamples.initialize(x0, nnparams, target_label, 0.0)
     abs_ve = NNOps.abs_ge.(ve)
     e_norm = sum(abs_ve)
     # e_norm = sum(ve.^2)

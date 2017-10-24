@@ -300,7 +300,7 @@ function softmaxconstraint{T<:JuMP.AbstractJuMPScalar}(
     @assert (target_index >= 1) && (target_index <= length(x))
     model = ConditionalJuMP.getmodel(x[1])
     # TODO: error checking on target index
-    x_matmul = matmul(x, params.mmparams)
+    x_matmul = params.mmparams(x)
     for i in 1:size(x_matmul)[1]
         if (i != target_index)
             @constraint(model, x_matmul[i] - x_matmul[target_index]<= tol)
@@ -311,12 +311,12 @@ end
 function softmaxindex{T<:Real}(
     x::Array{T, 1},
     params::SoftmaxParameters)::Integer
-    return findmax(matmul(x, params.mmparams))[2]
+    return findmax(params.mmparams(x))[2]
 end
 
-function squish{T<:JuMPReal, U<:Union{ConvolutionLayerParameters, FullyConnectedLayerParameters}}(x::Array{T}, ps::Array{U, 1})
-    return length(ps) == 0 ? x : squish(ps[1](x), ps[2:end])
-end
+# function squish{T<:JuMPReal, U<:Union{ConvolutionLayerParameters, FullyConnectedLayerParameters}}(x::Array{T}, ps::Array{U, 1})
+#     return length(ps) == 0 ? x : squish(ps[1](x), ps[2:end])
+# end
 
 (p::MatrixMultiplicationParameters){T<:JuMPReal}(x::Array{T, 1}) = matmul(x, p)
 (p::Conv2DParameters){T<:JuMPReal}(x::Array{T, 4}) = conv2d(x, p)
@@ -325,7 +325,10 @@ end
 (p::FullyConnectedLayerParameters){T<:JuMPReal}(x::Array{T, 1}) = fullyconnectedlayer(x, p)
 (p::SoftmaxParameters){T<:JuMP.AbstractJuMPScalar}(x::Array{T, 1}, target_index::Integer, tol::Float64 = 0) = softmaxconstraint(x, p, target_index, tol)
 (p::SoftmaxParameters){T<:Real}(x::Array{T, 1}) = softmaxindex(x, p)
-(ps::Array{U, 1}){T<:JuMPReal, U<:Union{ConvolutionLayerParameters, FullyConnectedLayerParameters}}(x::Array{T}) = squish(x, ps)
+(ps::Array{U, 1}){T<:JuMPReal, U<:Union{ConvolutionLayerParameters, FullyConnectedLayerParameters}}(x::Array{T}) = length(ps) == 0 ? x : ps[2:end](ps[1](x))
+
+(p::StandardNeuralNetParameters){T<:Real}(x::Array{T, 4}) = x |> p.convlayer_params |> NNOps.flatten |> p.fclayer_params |> p.softmax_params
+(p::StandardNeuralNetParameters){T<:JuMP.AbstractJuMPScalar}(x::Array{T, 4}, target_index::Integer, tol::Float64 = 0) = x |> p.convlayer_params |> NNOps.flatten |> p.fclayer_params |> (a) -> p.softmax_params(a, target_index, tol)
 
 """
 Permute dimensions of array because Python flattens arrays in the opposite order.

@@ -8,6 +8,7 @@ using Gurobi
 
 using NNExamples
 using NNOps
+using NNParameters
 
 ### Parameters for neural net
 batch = 1
@@ -45,32 +46,31 @@ B_width = A_height
 srand(5)
 x0 = rand(batch, in1_height, in1_width, in1_channels)
 
-conv1params = NNParameters.ConvolutionLayerParameters(
+conv1params = ConvolutionLayerParameters(
     rand(filter1_height, filter1_width, in1_channels, out1_channels)*2-1,
     rand(out1_channels)*2-1,
     strides1
 )
 
-conv2params = NNParameters.ConvolutionLayerParameters(
+conv2params = ConvolutionLayerParameters(
     rand(filter2_height, filter2_width, in2_channels, out2_channels)*2-1,
     rand(out2_channels)*2-1,
     strides2
 )
 
-fc1params = NNParameters.FullyConnectedLayerParameters(
+fc1params = FullyConnectedLayerParameters(
     rand(A_height, A_width)*2-1,
     rand(A_height)*2-1
 )
 
-softmaxparams = NNParameters.SoftmaxParameters(
+softmaxparams = SoftmaxParameters(
     rand(B_height, B_width)*2-1,
     rand(B_height)*2-1
 )
 
-(m, ve) = NNExamples.initialize(
-    x0,
-    [conv1params, conv2params], [fc1params], softmaxparams,
-    2, -1.0)
+nnparams = StandardNeuralNetParameters([conv1params, conv2params], [fc1params], softmaxparams)
+
+(m, ve) = NNExamples.initialize(x0, nnparams, 2, -1.0)
 
 abs_ve = NNOps.abs_ge.(ve)
 e_norm = sum(abs_ve)

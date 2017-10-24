@@ -8,7 +8,6 @@ using JuMP
 using NNExamples
 using NNParameters
 using NNOps
-using NNPredict
 using Util
 
 ### Parameters for neural net
@@ -68,6 +67,8 @@ softmaxparams = get_matrix_params(param_dict, "logits", (B_height, B_width)) |> 
 
 check_size(x0, (batch, in1_height, in1_width, in1_channels))
 
+nnparams = StandardNeuralNetParameters([conv1params, conv2params], [fc1params], softmaxparams)
+
 num_samples = 100
 num_correct = 0
 
@@ -75,13 +76,13 @@ target_label = -1 # TODO: fix
 min_dist = Inf
 target_sample_index = -1 # TODO: fix
 
-test_predicted_label = predict_label(x0, conv1params, conv2params, fc1params, softmaxparams)
+test_predicted_label = x0 |> nnparams
 adversarial_image = NNOps.avgpool(get_input(x_adv, test_index), PoolParameters((1, 2, 2, 1)))
-adversarial_predicted_label = predict_label(adversarial_image, conv1params, conv2params, fc1params, softmaxparams)
+adversarial_predicted_label = adversarial_image |> nnparams
 println("FGSM adversarial image predicted label by NN is $adversarial_predicted_label, original image predicted label by NN is $test_predicted_label.")
 for i = 1:num_samples
     sample_image = get_input(x_resize, i)
-    sample_predicted_label = predict_label(sample_image, conv1params, conv2params, fc1params, softmaxparams)
+    sample_predicted_label = sample_image |> nnparams
     sample_actual_label = get_label(y_, i)
     # println("Running test case $i. Predicted is $pred, actual is $actual.")
     if sample_predicted_label == sample_actual_label
@@ -108,7 +109,7 @@ println("Number correct on regular samples is $num_correct out of $num_samples."
 
 (m, ve) = NNExamples.initialize(
     x0,
-    conv1params, conv2params, fc1params, softmaxparams,
+    nnparams,
     target_label, 0.0, candidate_adversarial_example - x0)
 
 abs_ve = NNOps.abs_ge.(ve)

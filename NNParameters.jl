@@ -1,6 +1,6 @@
 module NNParameters
 
-export Conv2DParameters, PoolParameters, ConvolutionLayerParameters, MatrixMultiplicationParameters, SoftmaxParameters, FullyConnectedLayerParameters
+export Conv2DParameters, PoolParameters, ConvolutionLayerParameters, MatrixMultiplicationParameters, SoftmaxParameters, FullyConnectedLayerParameters, StandardNeuralNetParameters
 
 abstract type LayerParameters end
 
@@ -66,6 +66,17 @@ end
 
 function FullyConnectedLayerParameters(matrix::Array{T, 2}, bias::Array{U, 1}) where {T<:Real, U<:Real}
     FullyConnectedLayerParameters(MatrixMultiplicationParameters(matrix, bias))
+end
+
+
+
+
+abstract type NeuralNetParameters end
+
+struct StandardNeuralNetParameters <: NeuralNetParameters
+    convlayer_params::Array{ConvolutionLayerParameters, 1}
+    fclayer_params::Array{FullyConnectedLayerParameters, 1}
+    softmax_params::SoftmaxParameters
 end
 
 end
