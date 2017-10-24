@@ -14,10 +14,7 @@ function predict_label{T<:Real}(
     conv1_params::ConvolutionLayerParameters,
     softmax_params::SoftmaxParameters
     )::Int
-    x1 = NNOps.convlayer(input, conv1_params)
-    x2 = NNOps.flatten(x1)
-    predicted_label = NNOps.softmaxindex(x2, softmax_params)
-    return predicted_label
+    return input |> conv1_params |> NNOps.flatten |> softmax_params
 end
 
 function predict_label{T<:Real}(
@@ -26,11 +23,7 @@ function predict_label{T<:Real}(
     fc1_params::FullyConnectedLayerParameters,
     softmax_params::SoftmaxParameters,
     )::Int
-    x1 = NNOps.convlayer(input, conv1_params)
-    x2 = NNOps.flatten(x1)
-    x3 = NNOps.fullyconnectedlayer(x2, fc1_params)
-    predicted_label = NNOps.softmaxindex(x3, softmax_params)
-    return predicted_label
+    return input |> conv1_params |> NNOps.flatten |> fc1_params |> softmax_params
 end
 
 function predict_label{T<:Real}(
@@ -40,12 +33,7 @@ function predict_label{T<:Real}(
     fc1_params::FullyConnectedLayerParameters,
     softmax_params::SoftmaxParameters
     )::Int
-    x1 = NNOps.convlayer(input, conv1_params)
-    x2 = NNOps.convlayer(x1, conv2_params)
-    x3 = NNOps.flatten(x2)
-    x4 = NNOps.fullyconnectedlayer(x3, fc1_params)
-    predicted_label = NNOps.softmaxindex(x4, softmax_params)
-    return predicted_label
+    return input |> conv1_params |> conv2_params |> NNOps.flatten |> fc1_params |> softmax_params
 end
 
 function predict_label{T<:Real}(
@@ -54,11 +42,7 @@ function predict_label{T<:Real}(
     fc2_params::FullyConnectedLayerParameters,
     softmax_params::SoftmaxParameters,    
     )::Int
-    x1 = NNOps.flatten(input)
-    x2 = NNOps.fullyconnectedlayer(x1, fc1_params)
-    x3 = NNOps.fullyconnectedlayer(x2, fc2_params)
-    predicted_label = NNOps.softmaxindex(x3, softmax_params)
-    return predicted_label
+    return input |> NNOps.flatten |> fc1_params |> fc2_params |> softmax_params
 end
 
 end

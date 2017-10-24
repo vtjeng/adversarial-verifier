@@ -11,6 +11,8 @@ using Gurobi
 
 using NNParameters
 
+JuMPReal = Union{Real, JuMP.AbstractJuMPScalar}
+
 """
 For a convolution of `filter` on `input`, determines the size of the output.
 
@@ -18,7 +20,7 @@ For a convolution of `filter` on `input`, determines the size of the output.
 * ArgumentError if input and filter are not compatible.
 """
 function getconv2doutputsize{T}(
-    input::AbstractArray{T, 4},
+    input::Array{T, 4},
     params::Conv2DParameters)::NTuple{4, Int}
     (batch, in_height, in_width, input_in_channels) = size(input)
     (filter_height, filter_width, filter_in_channels, out_channels) = size(params.filter)
@@ -36,7 +38,7 @@ Mirrors `tf.nn.conv2d` from `tensorflow` package, with `strides` = [1, 1, 1, 1],
  `padding` = 'SAME'.
 """
 function conv2d{T<:Union{Real, JuMP.AffExpr, JuMP.Variable}, U<:Real, V<:Real}(
-    input::AbstractArray{T, 4},
+    input::Array{T, 4},
     params::Conv2DParameters{U, V})
     # TEST PLAN:
     #  (1) Incorrectly sized input,
@@ -113,7 +115,7 @@ indices.
      dimension.
 
 """
-function getsliceindex(input_array_size::Int, stride::Int, output_index::Int)::AbstractArray{Int, 1}
+function getsliceindex(input_array_size::Int, stride::Int, output_index::Int)::Array{Int, 1}
     parent_start_index = (output_index-1)*stride+1
     parent_end_index = min((output_index)*stride, input_array_size)
     if parent_start_index > parent_end_index
@@ -127,7 +129,7 @@ end
 For pooling operations on an array, returns a view of the parent array
 corresponding to the `output_index` in the output array.
 """
-function getpoolview{T, N}(input_array::AbstractArray{T, N}, strides::NTuple{N, Int}, output_index::NTuple{N, Int})::SubArray{T, N}
+function getpoolview{T, N}(input_array::Array{T, N}, strides::NTuple{N, Int}, output_index::NTuple{N, Int})::SubArray{T, N}
     it = zip(size(input_array), strides, output_index)
     input_index_range = map((x)-> getsliceindex(x...), it)
     return view(input_array, input_index_range...)
@@ -137,7 +139,7 @@ end
 For pooling operations on an array, returns the expected size of the output
 array.
 """
-function getoutputsize{T, N}(input_array::AbstractArray{T, N}, strides::NTuple{N, Int})::NTuple{N, Int}
+function getoutputsize{T, N}(input_array::Array{T, N}, strides::NTuple{N, Int})::NTuple{N, Int}
     output_size = ((x, y) -> round(Int, x/y, RoundUp)).(size(input_array), strides)
     return output_size
 end
@@ -146,10 +148,16 @@ end
 Returns output from applying `f` to subarrays of `input_array`, with the windows
 determined by the `strides`.
 """
-function poolmap{T, N}(f::Function, input_array::AbstractArray{T, N}, strides::NTuple{N, Int})
+function poolmap{T, N}(f::Function, input_array::Array{T, N}, strides::NTuple{N, Int})
     output_size = getoutputsize(input_array, strides)
     output_indices = collect(CartesianRange(output_size))
     return ((I) -> f(getpoolview(input_array, strides, I.I))).(output_indices)
+end
+
+function avgpool{T<:Real, N}(
+    input::Array{T, N},
+    params::PoolParameters{N})::Array{T, N}
+    return poolmap(mean, input, params.strides)
 end
 
 """
@@ -157,17 +165,11 @@ Computes the result of a max-pooling operation on `input_array` with specified
 `strides`.
 """
 function maxpool{T<:Real, N}(
-    input::AbstractArray{T, N},
-    params::PoolParameters{N})::AbstractArray{T, N}
+    input::Array{T, N},
+    params::PoolParameters{N})::Array{T, N}
     # NB: Tried to use pooling function from Knet.relu but it had way too many
     # incompatibilities
     return poolmap(Base.maximum, input, params.strides)
-end
-
-function avgpool{T<:Real, N}(
-    input::AbstractArray{T, N},
-    params::PoolParameters{N})::AbstractArray{T, N}
-    return poolmap(mean, input, params.strides)
 end
 
 """
@@ -187,7 +189,7 @@ Note that `x` and `x_pooled` must have sizes that match according to `strides`.
 TODO: finish up documentation
 """
 function maxpool{T<:JuMP.AbstractJuMPScalar}(
-    xs::AbstractArray{T, 4},
+    xs::Array{T, 4},
     params::PoolParameters{4})
     return poolmap(
         (x) -> NNOps.maximum(x[:]),
@@ -196,7 +198,7 @@ function maxpool{T<:JuMP.AbstractJuMPScalar}(
     )
 end
 
-function maximum_with_relu{T<:JuMP.AbstractJuMPScalar}(xs::AbstractArray{T, 1})::JuMP.GenericAffExpr
+function maximum_with_relu{T<:JuMP.AbstractJuMPScalar}(xs::Array{T, 1})::JuMP.GenericAffExpr
     if length(xs) == 1
         return xs[1]
     else
@@ -206,7 +208,7 @@ function maximum_with_relu{T<:JuMP.AbstractJuMPScalar}(xs::AbstractArray{T, 1}):
     end
 end
 
-function maximum{T<:JuMP.AbstractJuMPScalar}(xs::AbstractArray{T, 1})::JuMP.Variable
+function maximum{T<:JuMP.AbstractJuMPScalar}(xs::Array{T, 1})::JuMP.Variable
     @assert length(xs) >= 1
     model = ConditionalJuMP.getmodel(xs[1])
     x_max = @variable(model,
@@ -267,32 +269,30 @@ function relu(x::JuMP.AbstractJuMPScalar)::JuMP.Variable
     return x_rect
 end
 
-function convlayer{T<:Union{Real, JuMP.AbstractJuMPScalar}}(
-    x::AbstractArray{T, 4},
+function convlayer{T<:JuMPReal}(
+    x::Array{T, 4},
     params::ConvolutionLayerParameters)
-    x_conv = conv2d(x, params.conv2dparams)
+    x_conv = params.conv2dparams(x)
     x_maxpool = maxpool(x_conv, params.maxpoolparams)
     x_relu = relu.(x_maxpool)
     return x_relu
 end
 
-function matmul{T<:Union{Real, JuMP.AbstractJuMPScalar}}(
-    x::AbstractArray{T, 1}, 
+function matmul{T<:JuMPReal}(
+    x::Array{T, 1}, 
     params::MatrixMultiplicationParameters)
     return params.matrix*x .+ params.bias
 end
 
-function fullyconnectedlayer{T<:Union{Real, JuMP.AbstractJuMPScalar}}(
-    x::AbstractArray{T, 1}, 
+function fullyconnectedlayer{T<:JuMPReal}(
+    x::Array{T, 1}, 
     params::FullyConnectedLayerParameters)
     # TODO: Check with Robin whether I can force type inference here.
     return relu.(x |> params.mmparams)
 end
 
-(p::MatrixMultiplicationParameters)(x::AbstractArray) = matmul(x, p)
-
 function softmaxconstraint{T<:JuMP.AbstractJuMPScalar}(
-    x::AbstractArray{T, 1},
+    x::Array{T, 1},
     params::SoftmaxParameters,
     target_index::Integer,
     tol::Float64 = 0)
@@ -309,15 +309,23 @@ function softmaxconstraint{T<:JuMP.AbstractJuMPScalar}(
 end
 
 function softmaxindex{T<:Real}(
-    x::AbstractArray{T, 1},
+    x::Array{T, 1},
     params::SoftmaxParameters)::Integer
     return findmax(matmul(x, params.mmparams))[2]
 end
 
+(p::MatrixMultiplicationParameters){T<:JuMPReal}(x::Array{T, 1}) = matmul(x, p)
+(p::Conv2DParameters){T<:JuMPReal}(x::Array{T, 4}) = conv2d(x, p)
+
+(p::ConvolutionLayerParameters){T<:JuMPReal}(x::Array{T, 4}) = convlayer(x, p)
+(p::FullyConnectedLayerParameters){T<:JuMPReal}(x::Array{T, 1}) = fullyconnectedlayer(x, p)
+(p::SoftmaxParameters){T<:JuMP.AbstractJuMPScalar}(x::Array{T, 1}, target_index::Integer, tol::Float64 = 0) = softmaxconstraint(x, p, target_index, tol)
+(p::SoftmaxParameters){T<:Real}(x::Array{T, 1}) = softmaxindex(x, p)
+
 """
 Permute dimensions of array because Python flattens arrays in the opposite order.
 """
-function flatten{T, N}(x::AbstractArray{T, N})
+function flatten{T, N}(x::Array{T, N})
     return permutedims(x, N:-1:1)[:]
 end
 
@@ -368,22 +376,22 @@ function abs_strict(x::JuMP.AbstractJuMPScalar)::JuMP.Variable
     return x_abs
 end
 
-function layer{T<:Union{Real, JuMP.AbstractJuMPScalar}}(
-    input::AbstractArray{T, 4},
+function layer{T<:JuMPReal}(
+    input::Array{T, 4},
     params::ConvolutionLayerParameters)
     return convlayer(input, params)
 end
 
-function layer{T<:Union{Real, JuMP.AbstractJuMPScalar}}(
-    input::AbstractArray{T, 1},
+function layer{T<:JuMPReal}(
+    input::Array{T, 1},
     params::FullyConnectedLayerParameters)
     return fullyconnectedlayer(input, params)
 end
 
 function prop{T<:Real, U<:Real, V<:Real}(
-    input::AbstractArray{T},
-    input_lowerbounds::AbstractArray{U},
-    input_upperbounds::AbstractArray{V},
+    input::Array{T},
+    input_lowerbounds::Array{U},
+    input_upperbounds::Array{V},
     params::NNParameters.LayerParameters
     )
 
@@ -413,9 +421,9 @@ function prop{T<:Real, U<:Real, V<:Real}(
 end
 
 function forwardprop{T<:Real, U<:Real, V<:Real}(
-    input::AbstractArray{T},
-    input_lowerbounds::AbstractArray{U},
-    input_upperbounds::AbstractArray{V},
+    input::Array{T},
+    input_lowerbounds::Array{U},
+    input_upperbounds::Array{V},
     params::NNParameters.LayerParameters,
     k_in::Real
     )::Real
@@ -432,9 +440,9 @@ function forwardprop{T<:Real, U<:Real, V<:Real}(
 end
 
 function backprop{T<:Real, U<:Real, V<:Real}(
-    input::AbstractArray{T},
-    input_lowerbounds::AbstractArray{U},
-    input_upperbounds::AbstractArray{V},
+    input::Array{T},
+    input_lowerbounds::Array{U},
+    input_upperbounds::Array{V},
     params::NNParameters.LayerParameters,
     k_out::Real
     )::Real

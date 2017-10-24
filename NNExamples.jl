@@ -34,8 +34,8 @@ function initialize{T<:Real, U<:Real}(
     
     (m, vx0, ve) = initialize_common(input, perturbation_warm_start)
 
-    vx1 = NNOps.convlayer(vx0, conv1_params)
-    @constraint(m, vx1 .== target_output)
+    output = vx0 |> conv1_params
+    @constraint(m, output .== target_output)
 
     return (m, ve)
 end
@@ -53,9 +53,7 @@ function initialize{T<:Real}(
     println("Attempting to find adversarial example. Neural net predicted label is $predicted_label, target label is $target_label")
 
     (m, vx0, ve) = initialize_common(input, perturbation_warm_start)
-    vx1 = NNOps.convlayer(vx0, conv1_params)
-    vx2 = NNOps.flatten(vx1)
-    NNOps.softmaxconstraint(vx2, softmax_params, target_label, margin)
+    vx0 |> conv1_params |> NNOps.flatten |> (x) -> softmax_params(x, target_label, margin)
 
     return (m, ve)
 end
@@ -74,10 +72,7 @@ function initialize{T<:Real}(
     println("Attempting to find adversarial example. Neural net predicted label is $predicted_label, target label is $target_label")
 
     (m, vx0, ve) = initialize_common(input, perturbation_warm_start)
-    vx1 = NNOps.convlayer(vx0, conv1_params)
-    vx2 = NNOps.flatten(vx1)
-    vx3 = NNOps.fullyconnectedlayer(vx2, fc1_params)
-    NNOps.softmaxconstraint(vx3, softmax_params, target_label, margin)
+    vx0 |> conv1_params |> NNOps.flatten |> fc1_params |> (x) -> softmax_params(x, target_label, margin)
 
     return(m, ve)
 end
@@ -97,11 +92,7 @@ function initialize{T<:Real}(
     println("Attempting to find adversarial example. Neural net predicted label is $predicted_label, target label is $target_label")
 
     (m, vx0, ve) = initialize_common(input, perturbation_warm_start)
-    vx1 = NNOps.convlayer(vx0, conv1_params)
-    vx2 = NNOps.convlayer(vx1, conv2_params)
-    vx3 = NNOps.flatten(vx2)
-    vx4 = NNOps.fullyconnectedlayer(vx3, fc1_params)
-    NNOps.softmaxconstraint(vx4, softmax_params, target_label, margin)
+    vx0 |> conv1_params |> conv2_params |> NNOps.flatten |> fc1_params |> (x) -> softmax_params(x, target_label, margin)
 
     return(m, ve)
 end
@@ -121,12 +112,7 @@ function initialize{T<:Real}(
     println("Attempting to find adversarial example. Neural net predicted label is $predicted_label, target label is $target_label")
 
     (m, vx0, ve) = initialize_common(input, perturbation_warm_start)
-
-    vx1 = NNOps.flatten(vx0)
-    vx2 = NNOps.fullyconnectedlayer(vx1, fc1_params)
-    vx3 = NNOps.fullyconnectedlayer(vx2, fc2_params)
-
-    NNOps.softmaxconstraint(vx3, softmax_params, target_label, margin)
+    vx0 |> NNOps.flatten |> fc1_params |> fc2_params |> (x) -> softmax_params(x, target_label, margin)
 
     return(m, ve)
 end
