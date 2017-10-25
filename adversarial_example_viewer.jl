@@ -51,10 +51,6 @@ B_width = A_height
 
 UUID = "2017-09-28_181157"
 param_dict = matread("data/$UUID-ch-params.mat")
-x_adv = matread("data/$UUID-adversarial-examples.mat")["adv_x"]
-mnist_test_data = matread("data/mnist_test_data.mat")
-y_ = mnist_test_data["y_"]
-x_resize = mnist_test_data["x14_"]
 
 conv1params = ConvolutionLayerParameters(
     get_conv_params(param_dict, "conv1", (filter1_height, filter1_width, in1_channels, out1_channels)),
@@ -66,26 +62,24 @@ conv2params = ConvolutionLayerParameters(
     PoolParameters(strides2)
     )
 
-fc1params = get_matrix_params(param_dict, "fc1", (A_height, A_width))
-softmaxparams = get_matrix_params(param_dict, "logits", (B_height, B_width))
+fc1params = get_matrix_params(param_dict, "fc1", (A_height, A_width)) |> FullyConnectedLayerParameters
+softmaxparams = get_matrix_params(param_dict, "logits", (B_height, B_width)) |> SoftmaxParameters
 
-function calculate_predicted_label{T<:Real}(
-    x0_::AbstractArray{T, 4})::Int
-    x1_ = NNOps.convlayer(x0_, conv1params)
-    x2_ = NNOps.convlayer(x1_, conv2params)
-    x3_ = NNOps.fullyconnectedlayer(NNOps.flatten(x2_), fc1params)
-    predicted_label = NNOps.softmaxindex(x3_, softmaxparams)
-    return predicted_label
-end
+nnparams = StandardNeuralNetParameters([conv1params, conv2params], [fc1params], softmaxparams)
+
+mnist_test_data = matread("data/mnist_test_data.mat")
+y_ = mnist_test_data["y_"]
+x_resize = mnist_test_data["x14_"]
+x_adv = matread("data/$UUID-adversarial-examples.mat")["adv_x"]
 
 num_adv = 0
 for test_index = 1:size(x_adv)[1]
     actual_label = get_label(y_, test_index)
     x0 = get_input(x_resize, test_index)
 
-    test_predicted_label = calculate_predicted_label(x0)
+    test_predicted_label = x0 |> nnparams
     adversarial_image = NNOps.avgpool(get_input(x_adv, test_index), PoolParameters((1, 2, 2, 1)))
-    adversarial_predicted_label = calculate_predicted_label(adversarial_image)
+    adversarial_predicted_label = adversarial_image |> nnparams
 
     if (test_predicted_label != adversarial_predicted_label)
         num_adv += 1

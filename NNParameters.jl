@@ -1,6 +1,6 @@
 module NNParameters
 
-export Conv2DParameters, PoolParameters, ConvolutionLayerParameters, MatrixMultiplicationParameters, SoftmaxParameters, FullyConnectedLayerParameters, StandardNeuralNetParameters
+export Conv2DParameters, PoolParameters, ConvolutionLayerParameters, MatrixMultiplicationParameters, SoftmaxParameters, FullyConnectedLayerParameters, NeuralNetParameters, StandardNeuralNetParameters
 
 abstract type LayerParameters end
 
@@ -77,6 +77,7 @@ struct StandardNeuralNetParameters <: NeuralNetParameters
     convlayer_params::Array{ConvolutionLayerParameters, 1}
     fclayer_params::Array{FullyConnectedLayerParameters, 1}
     softmax_params::SoftmaxParameters
+    UUID::String
 end
 
 end

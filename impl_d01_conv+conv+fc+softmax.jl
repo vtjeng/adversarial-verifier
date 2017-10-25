@@ -10,6 +10,8 @@ using NNParameters
 using NNOps
 using Util
 
+# TODO: fix, this guy is out of date and not using the right infrastructure.
+
 ### Parameters for neural net
 batch = 1
 in1_height = 14

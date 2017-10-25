@@ -334,6 +334,7 @@ end
 Permute dimensions of array because Python flattens arrays in the opposite order.
 """
 function flatten{T, N}(x::Array{T, N})
+    # return x[:]
     return permutedims(x, N:-1:1)[:]
 end
 
