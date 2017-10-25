@@ -40,7 +40,10 @@ softmaxparams = SoftmaxParameters(
     rand(B_height)*2-1
 )
 nnparams = StandardNeuralNetParameters(
-    [conv1params], FullyConnectedLayerParameters[], softmaxparams
+    [conv1params], 
+    FullyConnectedLayerParameters[], 
+    softmaxparams,
+    "g02"
 )
 
 

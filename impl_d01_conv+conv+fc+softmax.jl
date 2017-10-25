@@ -69,7 +69,12 @@ softmaxparams = get_matrix_params(param_dict, "logits", (B_height, B_width)) |> 
 
 check_size(x0, (batch, in1_height, in1_width, in1_channels))
 
-nnparams = StandardNeuralNetParameters([conv1params, conv2params], [fc1params], softmaxparams)
+nnparams = StandardNeuralNetParameters(
+    [conv1params, conv2params], 
+    [fc1params], 
+    softmaxparams,
+    UUID
+)
 
 num_samples = 100
 num_correct = 0

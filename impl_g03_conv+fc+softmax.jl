@@ -49,7 +49,10 @@ softmaxparams = SoftmaxParameters(
 )
 
 nnparams = StandardNeuralNetParameters(
-    [conv1params], [fc1params], softmaxparams
+    [conv1params], 
+    [fc1params], 
+    softmaxparams,
+    "g03"
 )
 
 (m, ve) = NNExamples.initialize(x0, nnparams, 3, -1.0)

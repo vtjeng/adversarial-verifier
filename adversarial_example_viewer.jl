@@ -65,7 +65,12 @@ conv2params = ConvolutionLayerParameters(
 fc1params = get_matrix_params(param_dict, "fc1", (A_height, A_width)) |> FullyConnectedLayerParameters
 softmaxparams = get_matrix_params(param_dict, "logits", (B_height, B_width)) |> SoftmaxParameters
 
-nnparams = StandardNeuralNetParameters([conv1params, conv2params], [fc1params], softmaxparams)
+nnparams = StandardNeuralNetParameters(
+    [conv1params, conv2params], 
+    [fc1params], 
+    softmaxparams,
+    UUID
+)
 
 mnist_test_data = matread("data/mnist_test_data.mat")
 y_ = mnist_test_data["y_"]

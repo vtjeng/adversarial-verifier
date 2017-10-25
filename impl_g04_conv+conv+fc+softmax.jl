@@ -68,7 +68,12 @@ softmaxparams = SoftmaxParameters(
     rand(B_height)*2-1
 )
 
-nnparams = StandardNeuralNetParameters([conv1params, conv2params], [fc1params], softmaxparams)
+nnparams = StandardNeuralNetParameters(
+    [conv1params, conv2params], 
+    [fc1params], 
+    softmaxparams,
+    "g04"
+)
 
 (m, ve) = NNExamples.initialize(x0, nnparams, 2, -1.0)
 
