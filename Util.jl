@@ -131,7 +131,8 @@ function save_solve{T<:Real, U<:Real}(
     norm_type::Int, 
     perturbation::Array{T, 4},
     original::Array{U, 4},
-    solve_time::Real)
+    solve_time::Real,
+    tolerance::Real)
 
     solveID = get_solve_id(sample_index, target_label, norm_type)
     # Write solve info
@@ -143,7 +144,8 @@ function save_solve{T<:Real, U<:Real}(
         "perturbation" => (perturbation)[1, :, :, 1],
         "perturbed_image" => (perturbation + original)[1, :, :, 1],
         "perturbation_norm" => get_norm(norm_type, perturbation),
-        "solve_time" => solve_time
+        "solve_time" => solve_time,
+        "tolerance" => tolerance
     )
     matwrite(file_name, solve_info)
 

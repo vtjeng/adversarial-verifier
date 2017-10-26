@@ -29,7 +29,7 @@ function test_performance(nnparams::NeuralNetParameters, num_samples::Int)::Int
 end
 
 function find_adversarial_examples(nnparams::NeuralNetParameters, norm_type::Int, num_samples::Int;
-    redo_solve::Bool = false, one_sample_per_label = true, correct_classifications_only = true)
+    redo_solve::Bool = false, one_sample_per_label = true, correct_classifications_only = true, tolerance::Real=0.0)
     x_ = matread("data/mnist_test_data.mat")["x_"]
     y_ = matread("data/mnist_test_data.mat")["y_"]
 
@@ -41,7 +41,7 @@ function find_adversarial_examples(nnparams::NeuralNetParameters, norm_type::Int
         if (actual_label == predicted_label || !correct_classifications_only) && (!in(actual_label, covered_labels) || !one_sample_per_label)
             push!(covered_labels, actual_label)
             println("\nWorking on test sample $sample_index, with ground-truth label $actual_label.")
-            find_adversarial_example(x0, nnparams, sample_index, actual_label, norm_type, redo_solve = redo_solve)
+            find_adversarial_example(x0, nnparams, sample_index, actual_label, norm_type, redo_solve = redo_solve, tolerance = tolerance)
         else
             println("Only working on one sample per label; skipping sample $sample_index.")
         end
@@ -50,8 +50,8 @@ function find_adversarial_examples(nnparams::NeuralNetParameters, norm_type::Int
 end
 
 function find_adversarial_example{T<:Real}(input::Array{T, 4}, nnparams::NeuralNetParameters,
-    sample_index::Int, actual_label::Int, norm_type::Int; redo_solve::Bool = false)
-    catalog_name = "solve_summaries/$(nnparams.UUID).v1a.mat"
+    sample_index::Int, actual_label::Int, norm_type::Int; redo_solve::Bool = false, tolerance::Real=0.0)
+    catalog_name = "solve_summaries/$(nnparams.UUID).tol=$tolerance.v1a.mat"
     for target_label in 1:10
         println("------------------------------")
         println("Target label is $target_label")
@@ -67,15 +67,15 @@ function find_adversarial_example{T<:Real}(input::Array{T, 4}, nnparams::NeuralN
             # Set input constraint
             @constraint(m, v_input .== input)
             
-            NNOps.set_max_index(v_output, target_label, 1.0)
+            NNOps.set_max_index(v_output, target_label, tolerance)
             println("Attempting to find adversarial example. Neural net predicted label is $(input |> nnparams |> NNOps.get_max_index), target label is $target_label")
             status = solve(m)
 
             file_name = "solve_summaries/$(now()).mat"
             Util.save_solve(
-                catalog_name, file_name, (nnparams.UUID),
+                catalog_name, file_name, nnparams.UUID,
                 sample_index, actual_label, target_label, 
-                norm_type, getvalue(v_e), input, getsolvetime(m))
+                norm_type, getvalue(v_e), input, getsolvetime(m), tolerance)
         else
             println("Result found in catalog file; skipping this target label.")
         end
