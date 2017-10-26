@@ -42,4 +42,4 @@ num_samples = 100
 num_correct = NNSolve.test_performance(nnparams, num_samples)
 println("Evaluating neural net performance. Total correct: $num_correct/$num_samples. \n")
 
-NNSolve.find_adversarial_examples(nnparams, 1, 100, tolerance = 0.0)
+NNSolve.find_adversarial_examples(nnparams, 1, 100, tolerance = 0.0, redo_solve=true)
