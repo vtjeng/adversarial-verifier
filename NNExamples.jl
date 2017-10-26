@@ -12,11 +12,31 @@ using NNParameters
 
 function initialize{N}(
     nn_params::Union{NeuralNetParameters, LayerParameters},
+    input_size::NTuple{N}; rebuild::Bool = false
+    )::Tuple{JuMP.Model, Array{JuMP.Variable, N}, Array{JuMP.Variable, N}, Array}
+
+    model_file_name = "models/$(nn_params.UUID).$(input_size).jls"
+    if isfile(model_file_name) && !rebuild
+        println("Loading model from cache.")
+        open(model_file_name, "r") do f
+            return deserialize(f)
+        end
+    else
+        println("Rebuilding model from scratch.")
+        r = initialize_uncached(nn_params, input_size)
+        open(model_file_name, "w") do f
+            serialize(f, r)
+        end
+        return r
+    end
+end
+
+function initialize_uncached{N}(
+    nn_params::Union{NeuralNetParameters, LayerParameters},
     input_size::NTuple{N}
     )::Tuple{JuMP.Model, Array{JuMP.Variable, N}, Array{JuMP.Variable, N}, Array}
 
     m = Model(solver=GurobiSolver(MIPFocus = 3))
-
     dummy = Array{Void}(input_size)
 
     v_input = map(_ -> @variable(m), dummy) # what you're trying to perturb

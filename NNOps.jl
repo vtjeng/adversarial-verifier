@@ -297,7 +297,7 @@ end
 function set_max_index{T<:JuMP.AbstractJuMPScalar}(
     x::Array{T, 1},
     target_index::Integer,
-    tol::Float64 = 0)
+    tol::Real = 0)
     """
     Sets the target index to be the maximum.
 
@@ -315,7 +315,7 @@ end
 function set_unmax_index{T<:JuMP.AbstractJuMPScalar}(
     x::Array{T, 1},
     target_index::Integer,
-    tol::Float64 = 0)
+    tol::Real = 0)
     """
     Sets the target index to NOT be the maximum.
     """
