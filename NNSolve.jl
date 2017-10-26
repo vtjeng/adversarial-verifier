@@ -20,7 +20,7 @@ function test_performance(nnparams::NeuralNetParameters, num_samples::Int)::Int
     for sample_index in 1:num_samples
         x0 = get_input(x_, sample_index)
         actual_label = get_label(y_, sample_index)
-        predicted_label = (x0 |> nnparams)
+        predicted_label = x0 |> nnparams |> NNOps.get_max_index
         if actual_label == predicted_label
             num_correct += 1
         end
@@ -37,7 +37,7 @@ function find_adversarial_examples(nnparams::NeuralNetParameters, norm_type::Int
     for sample_index in 1:num_samples
         x0 = get_input(x_, sample_index)
         actual_label = get_label(y_, sample_index)
-        predicted_label = (x0 |> nnparams)
+        predicted_label = x0 |> nnparams |> NNOps.get_max_index
         if (actual_label == predicted_label || !correct_classifications_only) && (!in(actual_label, covered_labels) || !one_sample_per_label)
             push!(covered_labels, actual_label)
             println("\nWorking on test sample $sample_index, with ground-truth label $actual_label.")

@@ -82,9 +82,9 @@ for test_index = 1:size(x_adv)[1]
     actual_label = get_label(y_, test_index)
     x0 = get_input(x_resize, test_index)
 
-    test_predicted_label = x0 |> nnparams
+    test_predicted_label = x0 |> nnparams |> NNOps.get_max_index
     adversarial_image = NNOps.avgpool(get_input(x_adv, test_index), PoolParameters((1, 2, 2, 1)))
-    adversarial_predicted_label = adversarial_image |> nnparams
+    adversarial_predicted_label = adversarial_image |> nnparams |> NNOps.get_max_index
 
     if (test_predicted_label != adversarial_predicted_label)
         num_adv += 1

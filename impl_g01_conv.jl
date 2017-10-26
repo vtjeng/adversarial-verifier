@@ -45,18 +45,16 @@ conv1params = NNParameters.ConvolutionLayerParameters(
     (1, 2, 2, 1)
 )
 
-x0 = rand(batch, in_height, in_width, in_channels)
-x1 = NNOps.convlayer(x0, conv1params)
+input_size = (batch, in_height, in_width, in_channels)
 
-input = rand(batch, in_height, in_width, in_channels)
+(m, v_input, v_e, v_output) = NNExamples.initialize(conv1params, input_size)
 
-(m, ve) = NNExamples.initialize(input, conv1params, x1, x0-input)
+@constraint(m, v_output .== rand(input_size) |> conv1params)
+@constraint(m, v_input .== rand(input_size))
 
-abs_ve = NNOps.abs_ge.(ve)
-e_norm = sum(abs_ve)
-# @constraint(m, e_norm <= 18)
-
+abs_v_e = NNOps.abs_ge.(v_e)
+e_norm = sum(abs_v_e)
+   
 @objective(m, Min, e_norm)
-# @objective(m, Min, m.ext[:objective])
-
+   
 status = solve(m)

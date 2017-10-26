@@ -1,6 +1,6 @@
 module NNParameters
 
-export Conv2DParameters, PoolParameters, ConvolutionLayerParameters, MatrixMultiplicationParameters, SoftmaxParameters, FullyConnectedLayerParameters, NeuralNetParameters, StandardNeuralNetParameters
+export LayerParameters, Conv2DParameters, PoolParameters, ConvolutionLayerParameters, MatrixMultiplicationParameters, SoftmaxParameters, FullyConnectedLayerParameters, NeuralNetParameters, StandardNeuralNetParameters
 
 abstract type LayerParameters end
 

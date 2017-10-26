@@ -44,7 +44,8 @@ B_width = A_height
 
 ### Choosing data to be used
 srand(5)
-x0 = rand(batch, in1_height, in1_width, in1_channels)
+input_size = (batch, in1_height, in1_width, in1_channels)
+x0 = rand(input_size)
 
 conv1params = ConvolutionLayerParameters(
     rand(filter1_height, filter1_width, in1_channels, out1_channels)*2-1,
@@ -75,11 +76,17 @@ nnparams = StandardNeuralNetParameters(
     "g04"
 )
 
-(m, ve) = NNExamples.initialize(x0, nnparams, 2, -1.0)
+(m, v_input, v_e, v_output) = NNExamples.initialize(nnparams, input_size)
 
-abs_ve = NNOps.abs_ge.(ve)
-e_norm = sum(abs_ve)
-       
+# Set perturbation constraint
+abs_v_e = NNOps.abs_ge.(v_e)
+e_norm = sum(abs_v_e)
 @objective(m, Min, e_norm)
-       
+
+# Set input constraint
+NNOps.set_input_constraint(v_input, x0)
+
+target_label = 2
+NNOps.set_max_index(v_output, target_label, 1.0)
+println("Attempting to find adversarial example. Neural net predicted label is $(x0 |> nnparams |> NNOps.get_max_index), target label is $target_label")
 status = solve(m)

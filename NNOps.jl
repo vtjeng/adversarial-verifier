@@ -291,44 +291,81 @@ function fullyconnectedlayer{T<:JuMPReal}(
     return relu.(x |> params.mmparams)
 end
 
-function softmaxconstraint{T<:JuMP.AbstractJuMPScalar}(
+# TODO: Handle interaction between setting max index and setting unmax index.
+# TODO: rename to set_max_output_index
+
+function set_max_index{T<:JuMP.AbstractJuMPScalar}(
     x::Array{T, 1},
-    params::SoftmaxParameters,
     target_index::Integer,
     tol::Float64 = 0)
+    """
+    Sets the target index to be the maximum.
+
+    Tolerance is the amount of gap between x[target_index] and the other elements.
+    """
     @assert length(x) >= 1
     @assert (target_index >= 1) && (target_index <= length(x))
     model = ConditionalJuMP.getmodel(x[1])
-    # TODO: error checking on target index
-    x_matmul = params.mmparams(x)
-    for i in 1:size(x_matmul)[1]
-        if (i != target_index)
-            @constraint(model, x_matmul[i] - x_matmul[target_index]<= tol)
-        end
+
+    if haskey(model.ext, :max_index_constraint)
+        old_max_index_constraint = model.ext[:max_index_constraint]
+        JuMP.setRHS.(old_max_index_constraint, 10000)
+        println("Setting target maximum index to $target_index.")
+    end
+
+    other_vars = [x[1:target_index-1]; x[target_index+1:end]]
+    new_max_index_constraint = @constraint(model, other_vars - x[target_index] .<= -tol)
+    model.ext[:max_index_constraint] = new_max_index_constraint
+    
+end
+
+# function set_unmax_index{T<:JuMP.AbstractJuMPScalar}(
+#     x::Array{T, 1},
+#     target_index::Integer,
+#     tol::Float64 = 0)
+#     """
+#     Sets the target index to NOT be the maximum.
+#     """
+#     @assert length(x) >= 1
+#     @assert (target_index >= 1) && (target_index <= length(x))
+#     model = ConditionalJuMP.getmodel(x[1])
+#     x_max = NNOps.maximum(x)
+#     @constraint(model, x_max - x[target_index] >= tol)
+# end
+
+function get_max_index{T<:Real}(
+    x::Array{T, 1})::Integer
+    return findmax(x)[2]
+end
+
+function set_input_constraint{T<:Real}(v_input::Array{JuMP.Variable}, input::Array{T})
+    @assert length(v_input) > 0
+    m = ConditionalJuMP.getmodel(v_input[1])
+    if haskey(m.ext, :input_constraint)
+        input_constraint = m.ext[:input_constraint]
+        JuMP.setRHS.(input_constraint, input)
+        println("Resetting input constraint.")
+    else
+        @constraint(m, input_constraint, v_input .== input)
+        m.ext[:input_constraint] = input_constraint
+        println("New input constraint.")
     end
 end
-
-function softmaxindex{T<:Real}(
-    x::Array{T, 1},
-    params::SoftmaxParameters)::Integer
-    return findmax(params.mmparams(x))[2]
-end
-
-# function squish{T<:JuMPReal, U<:Union{ConvolutionLayerParameters, FullyConnectedLayerParameters}}(x::Array{T}, ps::Array{U, 1})
-#     return length(ps) == 0 ? x : squish(ps[1](x), ps[2:end])
-# end
 
 (p::MatrixMultiplicationParameters){T<:JuMPReal}(x::Array{T, 1}) = matmul(x, p)
 (p::Conv2DParameters){T<:JuMPReal}(x::Array{T, 4}) = conv2d(x, p)
 
 (p::ConvolutionLayerParameters){T<:JuMPReal}(x::Array{T, 4}) = convlayer(x, p)
 (p::FullyConnectedLayerParameters){T<:JuMPReal}(x::Array{T, 1}) = fullyconnectedlayer(x, p)
-(p::SoftmaxParameters){T<:JuMP.AbstractJuMPScalar}(x::Array{T, 1}, target_index::Integer, tol::Float64 = 0) = softmaxconstraint(x, p, target_index, tol)
-(p::SoftmaxParameters){T<:Real}(x::Array{T, 1}) = softmaxindex(x, p)
-(ps::Array{U, 1}){T<:JuMPReal, U<:Union{ConvolutionLayerParameters, FullyConnectedLayerParameters}}(x::Array{T}) = length(ps) == 0 ? x : ps[2:end](ps[1](x))
+(p::SoftmaxParameters){T<:JuMPReal}(x::Array{T, 1}) = p.mmparams(x)
 
-(p::StandardNeuralNetParameters){T<:Real}(x::Array{T, 4}) = x |> p.convlayer_params |> NNOps.flatten |> p.fclayer_params |> p.softmax_params
-(p::StandardNeuralNetParameters){T<:JuMP.AbstractJuMPScalar}(x::Array{T, 4}, target_index::Integer, tol::Float64 = 0) = x |> p.convlayer_params |> NNOps.flatten |> p.fclayer_params |> (a) -> p.softmax_params(a, target_index, tol)
+(ps::Array{U, 1}){T<:JuMPReal, U<:Union{ConvolutionLayerParameters, FullyConnectedLayerParameters}}(x::Array{T}) = (
+    length(ps) == 0 ? x : ps[2:end](ps[1](x))
+)
+
+(p::StandardNeuralNetParameters){T<:JuMPReal}(x::Array{T, 4}) = (
+    x |> p.convlayer_params |> NNOps.flatten |> p.fclayer_params |> p.softmax_params
+)
 
 """
 Permute dimensions of array because Python flattens arrays in the opposite order.

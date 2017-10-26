@@ -21,7 +21,7 @@ pooled1_width = round(Int, in1_width/stride1_width, RoundUp)
 in1_channels = 1
 filter1_height = 2
 filter1_width = 2
-out1_channels = 2
+out1_channels = 3
 
 B_height = 3
 B_width = pooled1_height*pooled1_width*out1_channels
@@ -46,12 +46,22 @@ nnparams = StandardNeuralNetParameters(
     "g02"
 )
 
+input_size = size(x0)
 
-(m, ve) = NNExamples.initialize(x0, nnparams, 3, -1.0)
+(m, v_input, v_e, v_output) = NNExamples.initialize(nnparams, input_size)
 
-abs_ve = NNOps.abs_ge.(ve)
-e_norm = sum(abs_ve)
-   
+# Set perturbation constraint
+abs_v_e = NNOps.abs_ge.(v_e)
+e_norm = sum(abs_v_e)
 @objective(m, Min, e_norm)
-   
-status = solve(m)
+
+# Set input constraint
+NNOps.set_input_constraint(v_input, x0)
+
+# Set output constraint
+for target_label in 1:2
+    NNOps.set_max_index(v_output, target_label, 1.0)
+    println("Attempting to find adversarial example. Neural net predicted label is $(x0 |> nnparams |> NNOps.get_max_index), target label is $target_label")
+    status = solve(m)
+end
+

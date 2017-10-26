@@ -83,13 +83,13 @@ target_label = -1 # TODO: fix
 min_dist = Inf
 target_sample_index = -1 # TODO: fix
 
-test_predicted_label = x0 |> nnparams
+test_predicted_label = x0 |> nnparams |> NNOps.get_max_index
 adversarial_image = NNOps.avgpool(get_input(x_adv, test_index), PoolParameters((1, 2, 2, 1)))
-adversarial_predicted_label = adversarial_image |> nnparams
+adversarial_predicted_label = adversarial_image |> nnparams |> NNOps.get_max_index
 println("FGSM adversarial image predicted label by NN is $adversarial_predicted_label, original image predicted label by NN is $test_predicted_label.")
 for i = 1:num_samples
     sample_image = get_input(x_resize, i)
-    sample_predicted_label = sample_image |> nnparams
+    sample_predicted_label = sample_image |> nnparams |> NNOps.get_max_index
     sample_actual_label = get_label(y_, i)
     # println("Running test case $i. Predicted is $pred, actual is $actual.")
     if sample_predicted_label == sample_actual_label
