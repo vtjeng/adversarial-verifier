@@ -51,22 +51,31 @@ end
 
 function find_adversarial_example{T<:Real}(input::Array{T, 4}, nnparams::NeuralNetParameters,
     sample_index::Int, actual_label::Int, norm_type::Int; redo_solve::Bool = false)
-    catalog_name = "solve_logs/$(nnparams.UUID).v1.mat"
+    catalog_name = "solve_summaries/$(nnparams.UUID).v1a.mat"
     for target_label in 1:10
         println("------------------------------")
         println("Target label is $target_label")
         do_this_target_label::Bool = !Util.check_solve(catalog_name, sample_index, target_label, norm_type) || redo_solve
         if do_this_target_label
-            (m, ve) = NNExamples.initialize(input, nnparams, target_label, 0.0)
-            e_norm = get_norm(norm_type, ve)
+            (m, v_input, v_e, v_output) = NNExamples.initialize(nnparams, size(input))
+            
+            # Set perturbation constraint
+            abs_v_e = NNOps.abs_ge.(v_e)
+            e_norm = sum(abs_v_e)
             @objective(m, Min, e_norm)
+            
+            # Set input constraint
+            @constraint(m, v_input .== input)
+            
+            NNOps.set_max_index(v_output, target_label, 1.0)
+            println("Attempting to find adversarial example. Neural net predicted label is $(input |> nnparams |> NNOps.get_max_index), target label is $target_label")
             status = solve(m)
 
-            file_name = "solve_logs/$(now()).mat"
+            file_name = "solve_summaries/$(now()).mat"
             Util.save_solve(
                 catalog_name, file_name, (nnparams.UUID),
                 sample_index, actual_label, target_label, 
-                norm_type, getvalue(ve), input, getsolvetime(m))
+                norm_type, getvalue(v_e), input, getsolvetime(m))
         else
             println("Result found in catalog file; skipping this target label.")
         end

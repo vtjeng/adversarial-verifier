@@ -59,9 +59,8 @@ e_norm = sum(abs_v_e)
 NNOps.set_input_constraint(v_input, x0)
 
 # Set output constraint
-for target_label in 1:2
-    NNOps.set_max_index(v_output, target_label, 1.0)
-    println("Attempting to find adversarial example. Neural net predicted label is $(x0 |> nnparams |> NNOps.get_max_index), target label is $target_label")
-    status = solve(m)
-end
+target_label = 1
+NNOps.set_max_index(v_output, target_label, 1.0)
+println("Attempting to find adversarial example. Neural net predicted label is $(x0 |> nnparams |> NNOps.get_max_index), target label is $target_label")
+status = solve(m)
 

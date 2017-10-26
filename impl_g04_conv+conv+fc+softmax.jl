@@ -84,7 +84,7 @@ e_norm = sum(abs_v_e)
 @objective(m, Min, e_norm)
 
 # Set input constraint
-NNOps.set_input_constraint(v_input, x0)
+@constraint(m, v_input .== x0)
 
 target_label = 2
 NNOps.set_max_index(v_output, target_label, 1.0)

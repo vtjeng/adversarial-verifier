@@ -307,49 +307,48 @@ function set_max_index{T<:JuMP.AbstractJuMPScalar}(
     @assert (target_index >= 1) && (target_index <= length(x))
     model = ConditionalJuMP.getmodel(x[1])
 
-    if haskey(model.ext, :max_index_constraint)
-        old_max_index_constraint = model.ext[:max_index_constraint]
-        JuMP.setRHS.(old_max_index_constraint, 10000)
-        println("Setting target maximum index to $target_index.")
-    end
-
     other_vars = [x[1:target_index-1]; x[target_index+1:end]]
-    new_max_index_constraint = @constraint(model, other_vars - x[target_index] .<= -tol)
-    model.ext[:max_index_constraint] = new_max_index_constraint
+    @constraint(model, other_vars - x[target_index] .<= -tol)
     
 end
 
-# function set_unmax_index{T<:JuMP.AbstractJuMPScalar}(
-#     x::Array{T, 1},
-#     target_index::Integer,
-#     tol::Float64 = 0)
-#     """
-#     Sets the target index to NOT be the maximum.
-#     """
-#     @assert length(x) >= 1
-#     @assert (target_index >= 1) && (target_index <= length(x))
-#     model = ConditionalJuMP.getmodel(x[1])
-#     x_max = NNOps.maximum(x)
-#     @constraint(model, x_max - x[target_index] >= tol)
-# end
+function set_unmax_index{T<:JuMP.AbstractJuMPScalar}(
+    x::Array{T, 1},
+    target_index::Integer,
+    tol::Float64 = 0)
+    """
+    Sets the target index to NOT be the maximum.
+    """
+    @assert length(x) >= 1
+    @assert (target_index >= 1) && (target_index <= length(x))
+    model = ConditionalJuMP.getmodel(x[1])
+    x_max = NNOps.maximum(x)
+    @constraint(model, x_max - x[target_index] >= tol)
+end
 
 function get_max_index{T<:Real}(
     x::Array{T, 1})::Integer
     return findmax(x)[2]
 end
 
+function tight_upperbound(x::JuMP.AbstractJuMPScalar)
+    m = ConditionalJuMP.getmodel(x)
+    @objective(m, Max, x)
+    solve(m)
+    return min(getobjectivevalue(m), upperbound(x))
+end
+
+function tight_lowerbound(x::JuMP.AbstractJuMPScalar)
+    m = ConditionalJuMP.getmodel(x)
+    @objective(m, Min, x)
+    solve(m)
+    return max(getobjectivevalue(m), lowerbound(x))
+end
+
 function set_input_constraint{T<:Real}(v_input::Array{JuMP.Variable}, input::Array{T})
     @assert length(v_input) > 0
     m = ConditionalJuMP.getmodel(v_input[1])
-    if haskey(m.ext, :input_constraint)
-        input_constraint = m.ext[:input_constraint]
-        JuMP.setRHS.(input_constraint, input)
-        println("Resetting input constraint.")
-    else
-        @constraint(m, input_constraint, v_input .== input)
-        m.ext[:input_constraint] = input_constraint
-        println("New input constraint.")
-    end
+    @constraint(m, v_input .== input)
 end
 
 (p::MatrixMultiplicationParameters){T<:JuMPReal}(x::Array{T, 1}) = matmul(x, p)
