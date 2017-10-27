@@ -211,9 +211,13 @@ end
 function maximum{T<:JuMP.AbstractJuMPScalar}(xs::Array{T, 1})::JuMP.Variable
     @assert length(xs) >= 1
     model = ConditionalJuMP.getmodel(xs[1])
+    l = Base.maximum(map(tight_lowerbound, xs))
+    u = Base.maximum(map(tight_upperbound, xs))
+    wl = Base.maximum(map(lowerbound, xs))
+    wu = Base.maximum(map(upperbound, xs))
     x_max = @variable(model,
-        lowerbound = Base.maximum(map(lowerbound, xs)),
-        upperbound = Base.maximum(map(upperbound, xs)))
+        lowerbound = l,
+        upperbound = u)
     indicators = []
     for x in xs
         a = @variable(model, category =:Bin)
@@ -235,8 +239,8 @@ end
 function relu(x::JuMP.AbstractJuMPScalar)::JuMP.Variable
     model = ConditionalJuMP.getmodel(x)
     x_rect = @variable(model)
-    u = upperbound(x)
-    l = lowerbound(x)
+    u = tight_upperbound(x)
+    l = tight_lowerbound(x)
 
     if u < 0
         # rectified value is always 0
@@ -322,6 +326,7 @@ function set_unmax_index{T<:JuMP.AbstractJuMPScalar}(
     @assert length(x) >= 1
     @assert (target_index >= 1) && (target_index <= length(x))
     model = ConditionalJuMP.getmodel(x[1])
+    
     x_max = NNOps.maximum(x)
     @constraint(model, x_max - x[target_index] >= tol)
 end
@@ -335,14 +340,18 @@ function tight_upperbound(x::JuMP.AbstractJuMPScalar)
     m = ConditionalJuMP.getmodel(x)
     @objective(m, Max, x)
     solve(m)
-    return min(getobjectivevalue(m), upperbound(x))
+    u = min(getobjectivevalue(m), upperbound(x))
+    println("Δu = $(upperbound(x)-u)")
+    return u
 end
 
 function tight_lowerbound(x::JuMP.AbstractJuMPScalar)
     m = ConditionalJuMP.getmodel(x)
     @objective(m, Min, x)
     solve(m)
-    return max(getobjectivevalue(m), lowerbound(x))
+    l = max(getobjectivevalue(m), lowerbound(x))
+    println("Δl = $(l-lowerbound(x))")
+    return l
 end
 
 function set_input_constraint{T<:Real}(v_input::Array{JuMP.Variable}, input::Array{T})

@@ -29,7 +29,7 @@ function test_performance(nnparams::NeuralNetParameters, num_samples::Int)::Int
 end
 
 function find_adversarial_examples(nnparams::NeuralNetParameters, norm_type::Int, num_samples::Int;
-    redo_solve::Bool = false, one_sample_per_label = true, correct_classifications_only = true, tolerance::Real=0.0)
+    redo_solve::Bool = false, one_sample_per_label = true, correct_classifications_only = true, tolerance::Real=0.0, rebuild_model = false)
     x_ = matread("data/mnist_test_data.mat")["x_"]
     y_ = matread("data/mnist_test_data.mat")["y_"]
 
@@ -41,7 +41,7 @@ function find_adversarial_examples(nnparams::NeuralNetParameters, norm_type::Int
         if (actual_label == predicted_label || !correct_classifications_only) && (!in(actual_label, covered_labels) || !one_sample_per_label)
             push!(covered_labels, actual_label)
             println("\nWorking on test sample $sample_index, with ground-truth label $actual_label.")
-            find_adversarial_example(x0, nnparams, sample_index, actual_label, norm_type, redo_solve = redo_solve, tolerance = tolerance)
+            find_adversarial_example(x0, nnparams, sample_index, actual_label, norm_type, redo_solve = redo_solve, tolerance = tolerance, rebuild_model = rebuild_model)
         else
             println("Only working on one sample per label; skipping sample $sample_index.")
         end
@@ -50,14 +50,14 @@ function find_adversarial_examples(nnparams::NeuralNetParameters, norm_type::Int
 end
 
 function find_adversarial_example{T<:Real}(input::Array{T, 4}, nnparams::NeuralNetParameters,
-    sample_index::Int, actual_label::Int, norm_type::Int; redo_solve::Bool = false, tolerance::Real=0.0)
+    sample_index::Int, actual_label::Int, norm_type::Int; redo_solve::Bool = false, tolerance::Real=0.0, rebuild_model::Bool = false)
     catalog_name = "solve_summaries/$(nnparams.UUID).tol=$tolerance.v1a.mat"
     for target_label in 1:10
         println("------------------------------")
         println("Target label is $target_label")
         do_this_target_label::Bool = !Util.check_solve(catalog_name, sample_index, target_label, norm_type) || redo_solve
         if do_this_target_label
-            (m, v_input, v_e, v_output) = NNExamples.initialize(nnparams, size(input))
+            (m, v_input, v_e, v_output) = NNExamples.initialize(nnparams, size(input), rebuild = rebuild_model)
             
             # Set perturbation constraint
             abs_v_e = NNOps.abs_ge.(v_e)

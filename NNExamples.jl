@@ -36,7 +36,7 @@ function initialize_uncached{N}(
     input_size::NTuple{N}
     )::Tuple{JuMP.Model, Array{JuMP.Variable, N}, Array{JuMP.Variable, N}, Array}
 
-    m = Model(solver=GurobiSolver(MIPFocus = 0, MIPGap=1.1))
+    m = Model(solver=GurobiSolver(MIPFocus = 0, MIPGap=0, OutputFlag=0))
     dummy = Array{Void}(input_size)
 
     v_input = map(_ -> @variable(m), dummy) # what you're trying to perturb
@@ -46,7 +46,7 @@ function initialize_uncached{N}(
 
     v_output = v_x0 |> nn_params
 
-    setsolve(m, GurobiSolver(MIPFocus = 3))
+    setsolver(m, GurobiSolver(MIPFocus = 3))
 
     return (m, v_input, v_e, v_output)
 end
